@@ -1,0 +1,634 @@
+openapi: 3.0.0
+info:
+  title: "FitWell API - End-to-End Payment"
+  version: "1.0.0"
+  description: |
+    API FitWell untuk workout tracking, appointment dengan dokter,
+    diagnosa, resep obat, dan pembayaran konsultasi + obat via Xendit.
+
+servers:
+  - url: http://localhost:8080/api
+
+tags:
+  - name: Users
+  - name: Workouts
+  - name: Exercises
+  - name: Exercise Logs
+  - name: Doctors
+  - name: Appointments
+  - name: Diagnoses
+  - name: Billings
+  - name: Payments
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    User:
+      type: object
+      properties:
+        id: { type: integer }
+        full_name: { type: string }
+        email: { type: string }
+        weight: { type: number, format: float }
+        height: { type: integer }
+
+    Workout:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        goals: { type: string }
+        user_id: { type: integer }
+
+    Exercise:
+      type: object
+      properties:
+        id: { type: integer }
+        workout_id: { type: integer }
+        name: { type: string }
+        sets: { type: integer }
+        reps: { type: integer }
+        equipment: { type: string }
+
+    ExerciseLog:
+      type: object
+      properties:
+        id: { type: integer }
+        exercise_id: { type: integer }
+        user_id: { type: integer }
+        set_count: { type: integer }
+        rep_count: { type: integer }
+        weight: { type: number, format: float }
+        created_at: { type: string, format: date-time }
+
+    Doctor:
+      type: object
+      properties:
+        id: { type: integer }
+        full_name: { type: string }
+        specialization: { type: string }
+        email: { type: string }
+
+    Appointment:
+      type: object
+      properties:
+        id: { type: integer }
+        user_id: { type: integer }
+        doctor_id: { type: integer }
+        appointment_date: { type: string, format: date-time }
+        status: { type: string, enum: [pending, confirmed, completed, cancelled] }
+        notes: { type: string }
+
+    Diagnosis:
+      type: object
+      properties:
+        id: { type: integer }
+        appointment_id: { type: integer }
+        doctor_id: { type: integer }
+        notes: { type: string }
+        prescribed_medications: { type: string }
+
+    Billing:
+      type: object
+      properties:
+        id: { type: integer }
+        appointment_id: { type: integer }
+        total_amount: { type: number, format: float }
+        payment_status: { type: string, enum: [unpaid, waiting_payment, paid, failed] }
+        invoice_url: { type: string }
+        created_at: { type: string, format: date-time }
+        paid_at: { type: string, format: date-time }
+
+paths:
+
+  # Users
+  /users/register:
+    post:
+      tags: [Users]
+      summary: Register new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [full_name, email, password, weight, height]
+              properties:
+                full_name: { type: string }
+                email: { type: string }
+                password: { type: string }
+                weight: { type: number, format: float }
+                height: { type: integer }
+      responses:
+        "201":
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  data:
+                    $ref: "#/components/schemas/User"
+
+  /users/login:
+    post:
+      tags: [Users]
+      summary: Login user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  access_token: { type: string }
+
+  # Workouts
+  /workouts:
+    get:
+      tags: [Workouts]
+      summary: Get all workouts for logged user
+      security: [{ BearerAuth: [] }]
+      responses:
+        "200":
+          description: List of workouts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Workout"
+
+    post:
+      tags: [Workouts]
+      summary: Create workout and generate exercises (preview)
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, goals]
+              properties:
+                name: { type: string }
+                goals: { type: string }
+      responses:
+        "201":
+          description: Workout created with generated exercises (not saved)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  data:
+                    type: object
+                    properties:
+                      workout:
+                        $ref: "#/components/schemas/Workout"
+                      exercises:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id:
+                              type: integer
+                              nullable: true
+                              description: "null karena belum disimpan"
+                            workout_id:
+                              type: integer
+                            name:
+                              type: string
+                            sets:
+                              type: integer
+                            reps:
+                              type: integer
+                            equipment:
+                              type: string
+
+  /workouts/{id}:
+    get:
+      tags: [Workouts]
+      summary: Get workout details including exercises
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Workout detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Workout"
+
+    put:
+      tags: [Workouts]
+      summary: Update workout
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                goals: { type: string }
+      responses:
+        "200":
+          description: Workout updated
+
+    delete:
+      tags: [Workouts]
+      summary: Delete workout and exercises
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Workout deleted
+
+  # Exercises
+  /exercises:
+    post:
+      tags: [Exercises]
+      summary: Create exercise
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [workout_id, name]
+              properties:
+                workout_id: { type: integer }
+                name: { type: string }
+                description: { type: string }
+                sets: { type: integer }
+                reps: { type: integer }
+                equipment: { type: string }
+      responses:
+        "201":
+          description: Exercise created
+
+  /exercises/{id}:
+    delete:
+      tags: [Exercises]
+      summary: Delete exercise
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Exercise deleted
+
+  # Exercise Logs
+  /logs:
+    get:
+      tags: [Exercise Logs]
+      summary: Get user exercise logs
+      security: [{ BearerAuth: [] }]
+      responses:
+        "200":
+          description: List of exercise logs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ExerciseLog"
+
+    post:
+      tags: [Exercise Logs]
+      summary: Create exercise log
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [exercise_id, set_count, rep_count, weight]
+              properties:
+                exercise_id: { type: integer }
+                set_count: { type: integer }
+                rep_count: { type: integer }
+                weight: { type: number, format: float }
+      responses:
+        "201":
+          description: Log created
+
+  # Doctors
+  /doctors:
+    get:
+      tags: [Doctors]
+      summary: List all doctors
+      security: [{ BearerAuth: [] }]
+      responses:
+        "200":
+          description: List of doctors
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Doctor"
+
+  # Appointments
+  /appointments:
+    get:
+      tags: [Appointments]
+      summary: List user appointments
+      security: [{ BearerAuth: [] }]
+      responses:
+        "200":
+          description: List of appointments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Appointment"
+
+    post:
+      tags: [Appointments]
+      summary: Create new appointment
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [doctor_id, appointment_date]
+              properties:
+                doctor_id: { type: integer }
+                appointment_date: { type: string, format: date-time }
+                notes: { type: string }
+      responses:
+        "201":
+          description: Appointment created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  data:
+                    $ref: "#/components/schemas/Appointment"
+
+  # Billings
+  /billings:
+    post:
+      tags: [Billings]
+      summary: Create new billing for an appointment
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [appointment_id, total_amount]
+              properties:
+                appointment_id: { type: integer }
+                total_amount: { type: number, format: float }
+                external_id: { type: string }
+                invoice_url: { type: string }
+      responses:
+        "201":
+          description: Billing created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  data:
+                    $ref: "#/components/schemas/Billing"
+
+  /billings/{id}:
+    get:
+      tags: [Billings]
+      summary: Get billing details by ID
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Billing details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  data:
+                    $ref: "#/components/schemas/Billing"
+
+  /billings/appointment/{appointment_id}:
+    get:
+      tags: [Billings]
+      summary: Get billing by appointment ID
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - in: path
+          name: appointment_id
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Billing details for appointment
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  data:
+                    $ref: "#/components/schemas/Billing"
+
+  /billings/{id}/payment-status:
+    put:
+      tags: [Billings]
+      summary: Update payment status
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [payment_status]
+              properties:
+                payment_status: { type: string, enum: [unpaid, waiting_payment, paid, failed] }
+                invoice_url: { type: string }
+      responses:
+        "200":
+          description: Payment status updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+
+  # Diagnoses
+  /diagnoses:
+    post:
+      tags: [Diagnoses]
+      summary: Create diagnosis and auto-generate billing (Rp 200.000 + medications)
+      description: |
+        Buat diagnosa untuk appointment. Billing akan dibuat otomatis dengan:
+        - Biaya appointment: Rp 200.000
+        - Biaya obat: Rp 50.000 per obat (jika ada prescribed_medications)
+        
+        Format prescribed_medications: "Obat1, Obat2, Obat3" (comma separated)
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [appointment_id, doctor_id, notes]
+              properties:
+                appointment_id: { type: integer }
+                doctor_id: { type: integer }
+                notes: { type: string }
+                prescribed_medications: { type: string, description: "Comma-separated list of medications" }
+      responses:
+        "201":
+          description: Diagnosis and billing created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  data:
+                    type: object
+                    properties:
+                      diagnosis:
+                        $ref: "#/components/schemas/Diagnosis"
+                      billing:
+                        $ref: "#/components/schemas/Billing"
+                      total_amount: { type: number, format: float }
+
+  /diagnoses/{id}:
+    get:
+      tags: [Diagnoses]
+      summary: Get diagnosis by ID
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Diagnosis details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  data:
+                    $ref: "#/components/schemas/Diagnosis"
+
+    put:
+      tags: [Diagnoses]
+      summary: Update diagnosis
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                notes: { type: string }
+                prescribed_medications: { type: string }
+      responses:
+        "200":
+          description: Diagnosis updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  data:
+                    $ref: "#/components/schemas/Diagnosis"
+                  total_amount: { type: number, format: float }
+
+  /diagnoses/appointment/{appointment_id}:
+    get:
+      tags: [Diagnoses]
+      summary: Get diagnosis by appointment ID
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - in: path
+          name: appointment_id
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Diagnosis details for appointment
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  data:
+                    $ref: "#/components/schemas/Diagnosis"
+     
