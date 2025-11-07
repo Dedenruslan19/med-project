@@ -214,5 +214,5 @@ For questions or issues, please open an issue on GitHub or contact the developme
 
 ---
 
-API DOC : https://documenter.getpostman.com/view/45800381/2sB3WsPKeW
-DEPLOYMENT URL :
+- API DOC : https://documenter.getpostman.com/view/45800381/2sB3WsPKeW
+- DEPLOYMENT URL : https://med-project-production.up.railway.app/
