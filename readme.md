@@ -1,6 +1,6 @@
-# FitWell API
+# FitConnect API
 
-FitWell is a comprehensive fitness and healthcare platform built with Go, combining AI-powered workout generation with medical consultation services.
+FitConnect is a comprehensive fitness and healthcare platform built with Go, combining AI-powered workout generation with medical consultation services.
 
 ## Features
 
