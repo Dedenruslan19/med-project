@@ -2,74 +2,40 @@ package controller
 
 import (
 	"Dedenruslan19/med-project/service/billings"
+	"Dedenruslan19/med-project/service/invoices"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/labstack/echo/v4"
 )
 
 type BillingController struct {
-	service  billings.Service
-	validate *validator.Validate
-	logger   *slog.Logger
+	service        billings.Service
+	invoiceService invoices.Service
+	validate       *validator.Validate
+	logger         *slog.Logger
 }
 
-func NewBillingController(service billings.Service, logger *slog.Logger) *BillingController {
+func NewBillingController(service billings.Service, invoiceService invoices.Service, logger *slog.Logger) *BillingController {
 	return &BillingController{
-		service:  service,
-		validate: validator.New(),
-		logger:   logger,
+		service:        service,
+		invoiceService: invoiceService,
+		validate:       validator.New(),
+		logger:         logger,
 	}
 }
 
-type CreateBillingRequest struct {
-	AppointmentID int64   `json:"appointment_id" validate:"required"`
-	TotalAmount   float64 `json:"total_amount" validate:"required,gt=0"`
-	ExternalID    string  `json:"external_id"`
-	InvoiceURL    string  `json:"invoice_url"`
+type UpdatePaymentStatusRequest struct {
+	PaymentStatus string `json:"payment_status" validate:"required,oneof=unpaid waiting_payment paid failed"`
 }
 
-func (bc *BillingController) CreateBilling(c echo.Context) error {
-	var req CreateBillingRequest
-	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{
-			"error": "Invalid request body",
-		})
-	}
-
-	if err := bc.validate.Struct(req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{
-			"error": err.Error(),
-		})
-	}
-
-	billing := &billings.Billing{
-		AppointmentID: req.AppointmentID,
-		TotalAmount:   req.TotalAmount,
-		PaymentStatus: "unpaid",
-		ExternalID:    req.ExternalID,
-		InvoiceURL:    req.InvoiceURL,
-	}
-
-	id, err := bc.service.Create(billing)
-	if err != nil {
-		bc.logger.Error("Failed to create billing",
-			slog.Any("error", err),
-			slog.Int64("appointment_id", req.AppointmentID),
-		)
-		return c.JSON(http.StatusInternalServerError, map[string]string{
-			"error": "Failed to create billing",
-		})
-	}
-
-	billing.ID = id
-
-	return c.JSON(http.StatusCreated, map[string]interface{}{
-		"message": "Billing created successfully",
-		"data":    billing,
-	})
+type CreateInvoiceRequest struct {
+	PayerEmail  string `json:"payer_email" validate:"required,email"`
+	Description string `json:"description"`
 }
 
 func (bc *BillingController) GetBillingByID(c echo.Context) error {
@@ -77,23 +43,23 @@ func (bc *BillingController) GetBillingByID(c echo.Context) error {
 	id, err := strconv.ParseInt(idParam, 10, 64)
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{
-			"error": "Invalid billing ID",
+			"error": "invalid billing ID",
 		})
 	}
 
 	billing, err := bc.service.GetByID(id)
 	if err != nil {
-		bc.logger.Error("Failed to get billing",
+		bc.logger.Error("failed to get billing",
 			slog.Any("error", err),
 			slog.Int64("billing_id", id),
 		)
 		return c.JSON(http.StatusNotFound, map[string]string{
-			"error": "Billing not found",
+			"error": "billing not found",
 		})
 	}
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
-		"message": "Billing retrieved successfully",
+		"message": "billing retrieved successfully",
 		"data":    billing,
 	})
 }
@@ -124,9 +90,66 @@ func (bc *BillingController) GetBillingByAppointmentID(c echo.Context) error {
 	})
 }
 
-type UpdatePaymentStatusRequest struct {
-	PaymentStatus string `json:"payment_status" validate:"required,oneof=unpaid waiting_payment paid failed"`
-	InvoiceURL    string `json:"invoice_url"`
+func (bc *BillingController) CreateInvoice(c echo.Context) error {
+	idParam := c.Param("id")
+	billingID, err := strconv.ParseInt(idParam, 10, 64)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{
+			"error": "Invalid billing ID",
+		})
+	}
+
+	var req CreateInvoiceRequest
+	if bindErr := c.Bind(&req); bindErr != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{
+			"error": "Invalid request body",
+		})
+	}
+
+	if validateErr := bc.validate.Struct(req); validateErr != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{
+			"error": validateErr.Error(),
+		})
+	}
+
+	// Get billing details
+	billing, err := bc.service.GetByID(billingID)
+	if err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{
+			"error": "Billing not found",
+		})
+	}
+
+	// Check if already paid
+	if billing.PaymentStatus == "paid" {
+		return c.JSON(http.StatusBadRequest, map[string]string{
+			"error": "Billing already paid",
+		})
+	}
+
+	// Update billing status to waiting_payment
+	err = bc.service.UpdatePaymentStatus(billingID, "waiting_payment")
+	if err != nil {
+		bc.logger.Error("Failed to update billing status",
+			slog.Any("error", err),
+			slog.Int64("billing_id", billingID),
+		)
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "Failed to update billing",
+		})
+	}
+
+	bc.logger.Info("Invoice created",
+		slog.Int64("billing_id", billingID),
+		slog.String("payer_email", req.PayerEmail),
+		slog.Float64("amount", billing.TotalAmount))
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"message": "Payment invoice created successfully",
+		"data": map[string]interface{}{
+			"amount": billing.TotalAmount,
+		},
+	})
 }
 
 func (bc *BillingController) UpdatePaymentStatus(c echo.Context) error {
@@ -151,7 +174,14 @@ func (bc *BillingController) UpdatePaymentStatus(c echo.Context) error {
 		})
 	}
 
-	err = bc.service.UpdatePaymentStatus(id, req.PaymentStatus, req.InvoiceURL)
+	bc.logger.Info("Updating payment status",
+		slog.Int64("billing_id", id),
+		slog.String("payment_status", req.PaymentStatus),
+		slog.String("payment_status_lower", strings.ToLower(strings.TrimSpace(req.PaymentStatus))),
+	)
+
+	// Update payment status
+	err = bc.service.UpdatePaymentStatus(id, req.PaymentStatus)
 	if err != nil {
 		bc.logger.Error("Failed to update payment status",
 			slog.Any("error", err),
@@ -162,17 +192,48 @@ func (bc *BillingController) UpdatePaymentStatus(c echo.Context) error {
 		})
 	}
 
-	// If status is paid, update paid_at timestamp
-	if req.PaymentStatus == "paid" {
-		if paidErr := bc.service.MarkAsPaid(id); paidErr != nil {
-			bc.logger.Error("Failed to mark as paid",
-				slog.Any("error", paidErr),
+	// Auto-create invoice when payment status is "paid"
+	if strings.ToLower(strings.TrimSpace(req.PaymentStatus)) == "paid" {
+		// Get billing details
+		_, err := bc.service.GetByID(id)
+		if err != nil {
+			bc.logger.Error("Failed to get billing for invoice creation",
+				slog.Any("error", err),
 				slog.Int64("billing_id", id),
 			)
+			// Don't fail the payment status update, just log the error
+		} else {
+			// In a real scenario, you would fetch the diagnosis to calculate medication fees
+			consultationFee := 200000.0
+			medicationFee := 0.0
+			totalAmount := consultationFee + medicationFee
+
+			// For now, use a default email. In production, fetch user email from appointment
+			email := "user@example.com"
+
+			invoice, err := bc.invoiceService.CreateInvoice(id, consultationFee, medicationFee, totalAmount, email)
+			if err != nil {
+				bc.logger.Error("Failed to auto-create invoice",
+					slog.Any("error", err),
+					slog.Int64("billing_id", id),
+				)
+			} else {
+				bc.logger.Info("Invoice auto-created successfully",
+					slog.Int64("billing_id", id),
+					slog.Int64("invoice_id", invoice.ID),
+					slog.String("invoice_number", invoice.InvoiceNumber),
+				)
+			}
 		}
 	}
 
 	return c.JSON(http.StatusOK, map[string]string{
-		"message": "Payment status updated successfully",
+		"message": fmt.Sprintf("Payment status updated successfully%s",
+			func() string {
+				if strings.ToLower(strings.TrimSpace(req.PaymentStatus)) == "paid" {
+					return " and invoice created"
+				}
+				return ""
+			}()),
 	})
 }

@@ -35,6 +35,7 @@ func JWTMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 
 		c.Set("user_id", claims.UserID)
 		c.Set("email", claims.Email)
+		c.Set("role", claims.Role) // Add role to context
 
 		return next(c)
 	}
@@ -47,6 +48,27 @@ func ValidateContentType(next echo.HandlerFunc) echo.HandlerFunc {
 				"message": "invalid content type",
 			})
 		}
+		return next(c)
+	}
+}
+
+// DoctorOnly middleware - Only allows doctors to access the endpoint
+func DoctorOnly(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		role := c.Get("role")
+		if role == nil {
+			return c.JSON(http.StatusUnauthorized, map[string]string{
+				"error": "Unauthorized access",
+			})
+		}
+
+		roleStr, ok := role.(string)
+		if !ok || roleStr != "doctor" {
+			return c.JSON(http.StatusForbidden, map[string]string{
+				"error": "Only doctors can perform this action",
+			})
+		}
+
 		return next(c)
 	}
 }

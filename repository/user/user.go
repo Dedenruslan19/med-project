@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"strings"
 
+	errs "Dedenruslan19/med-project/service/errors"
 	service "Dedenruslan19/med-project/service/users"
 
 	"gorm.io/gorm"
@@ -33,7 +34,7 @@ func (r *userRepo) Create(u service.User) (int64, error) {
 			r.logger.Error("failed to create user - email already exists",
 				"email", u.Email,
 				"error", err)
-			return 0, service.ErrEmailAlreadyExists
+			return 0, errs.ErrEmailAlreadyExists
 		}
 
 		r.logger.Error("failed to create user",

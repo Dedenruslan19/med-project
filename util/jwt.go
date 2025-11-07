@@ -13,6 +13,7 @@ import (
 type Claims struct {
 	UserID int64
 	Email  string
+	Role   string
 	jwt.RegisteredClaims
 }
 
@@ -31,12 +32,23 @@ func loadJWTSecret() []byte {
 	return jwtSecret
 }
 
-func GenerateJWT(userID int64, email string) (string, error) {
+func GenerateJWT(userID int64, roleOrEmail string) (string, error) {
+	// Determine if second parameter is role or email (for backwards compatibility)
+	role := "user"
+	email := roleOrEmail
+
+	// If roleOrEmail is "doctor" or "user", treat it as role
+	if roleOrEmail == "doctor" || roleOrEmail == "user" {
+		role = roleOrEmail
+		email = "" // Email can be empty for now
+	}
+
 	expirationTime := time.Now().Add(30 * time.Minute)
 
 	claims := &Claims{
 		UserID: userID,
 		Email:  email,
+		Role:   role,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expirationTime),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),

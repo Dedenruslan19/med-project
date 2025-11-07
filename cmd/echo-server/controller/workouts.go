@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
+	errs "Dedenruslan19/med-project/service/errors"
 	"Dedenruslan19/med-project/service/workouts"
 
 	"log/slog"
@@ -38,20 +39,19 @@ func (wc *WorkoutController) GetAllWorkouts(c echo.Context) error {
 		"workouts": data,
 	})
 }
-
-func (wc *WorkoutController) CreateWorkout(c echo.Context) error {
+func (wc *WorkoutController) PreviewWorkout(c echo.Context) error {
 	userIDInterface := c.Get("user_id")
 	userID, ok := userIDInterface.(int64)
 	if !ok {
 		return c.JSON(http.StatusUnauthorized, ErrUnauthorized)
 	}
 
-	var input workouts.WorkoutInput
-	if err := c.Bind(&input); err != nil {
+	var req workouts.PreviewWorkoutRequest
+	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, ErrInvalidRequestBody)
 	}
 
-	if err := wc.validate.Struct(input); err != nil {
+	if err := wc.validate.Struct(req); err != nil {
 		validationErrors := err.(validator.ValidationErrors)
 		errorsMap := make(map[string]string)
 		for _, fieldErr := range validationErrors {
@@ -63,41 +63,70 @@ func (wc *WorkoutController) CreateWorkout(c echo.Context) error {
 		})
 	}
 
-	newWorkout, err := wc.service.CreateWorkout(userID, input)
+	previewWorkout, err := wc.service.PreviewWorkout(userID, req)
+	if err != nil {
+		wc.logger.Error("Failed to preview workout", slog.Any("error", err))
+		return c.JSON(http.StatusInternalServerError, ErrInternalServer)
+	}
+
+	// Format response: {workout_name: {object}, exercises: [array]}
+	response := map[string]interface{}{
+		"workout_name": map[string]interface{}{
+			"workout_name": previewWorkout.Workout.Name,
+			"goals":        previewWorkout.Workout.Goals,
+			"id":           previewWorkout.Workout.ID,
+			"user_id":      previewWorkout.Workout.UserID,
+		},
+		"exercises": previewWorkout.Exercises,
+	}
+
+	return c.JSON(http.StatusOK, response)
+}
+func (wc *WorkoutController) CreateWorkout(c echo.Context) error {
+	userIDInterface := c.Get("user_id")
+	userID, ok := userIDInterface.(int64)
+	if !ok {
+		return c.JSON(http.StatusUnauthorized, ErrUnauthorized)
+	}
+
+	var req workouts.SaveWorkoutRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, ErrInvalidRequestBody)
+	}
+
+	if err := wc.validate.Struct(req); err != nil {
+		validationErrors := err.(validator.ValidationErrors)
+		errorsMap := make(map[string]string)
+		for _, fieldErr := range validationErrors {
+			errorsMap[fieldErr.Field()] = fieldErr.Tag()
+		}
+		return c.JSON(http.StatusBadRequest, map[string]interface{}{
+			"message": "validation failed",
+			"errors":  errorsMap,
+		})
+	}
+
+	newWorkout, err := wc.service.CreateWorkout(userID, req)
 	if err != nil {
 		wc.logger.Error("Failed to create workout", slog.Any("error", err), slog.Int64("user_id", userID))
 		return c.JSON(http.StatusInternalServerError, ErrInternalServer)
 	}
 
-	return c.JSON(http.StatusCreated, map[string]interface{}{
-		"message": "workout created successfully",
-		"data":    newWorkout,
-	})
+	// Format response sama seperti preview: {workout_name: {object}, exercises: [array]}
+	response := map[string]interface{}{
+		"workout_name": map[string]interface{}{
+			"workout_name": newWorkout.Workout.Name,
+			"goals":        newWorkout.Workout.Goals,
+			"id":           newWorkout.Workout.ID,
+			"user_id":      newWorkout.Workout.UserID,
+		},
+		"exercises": newWorkout.Exercises,
+	}
+
+	return c.JSON(http.StatusCreated, response)
 }
 
 func (wc *WorkoutController) GetWorkoutByID(c echo.Context) error {
-	workoutIDParam := c.Param("id")
-	workoutID, err := strconv.ParseInt(workoutIDParam, 10, 64)
-	if err != nil {
-		return c.JSON(http.StatusBadRequest, ErrInvalidParams)
-	}
-
-	workout, err := wc.service.GetWorkoutByID(workoutID)
-	if err != nil {
-		if err == workouts.ErrWorkoutNotFound {
-			return c.JSON(http.StatusNotFound, ErrDataNotFound)
-		}
-		wc.logger.Error("Failed to get workout by ID", slog.Any("error", err))
-		return c.JSON(http.StatusInternalServerError, ErrInternalServer)
-	}
-
-	return c.JSON(http.StatusOK, map[string]interface{}{
-		"message": "success",
-		"data":    workout,
-	})
-}
-
-func (wc *WorkoutController) UpdateWorkout(c echo.Context) error {
 	userIDInterface := c.Get("user_id")
 	userID, ok := userIDInterface.(int64)
 	if !ok {
@@ -110,40 +139,30 @@ func (wc *WorkoutController) UpdateWorkout(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, ErrInvalidParams)
 	}
 
-	var input workouts.WorkoutInput
-	if bindErr := c.Bind(&input); bindErr != nil {
-		return c.JSON(http.StatusBadRequest, workouts.ErrInvalidInput)
-	}
-
-	if validateErr := wc.validate.Struct(input); validateErr != nil {
-		validationErrors := validateErr.(validator.ValidationErrors)
-		errorsMap := make(map[string]string)
-		for _, fieldErr := range validationErrors {
-			errorsMap[fieldErr.Field()] = fieldErr.Tag()
-		}
-		return c.JSON(http.StatusBadRequest, map[string]interface{}{
-			"message": "validation failed",
-			"errors":  errorsMap,
-		})
-	}
-
-	updatedWorkout, err := wc.service.UpdateWorkout(userID, workoutID, input)
+	workout, err := wc.service.GetWorkoutByID(userID, workoutID)
 	if err != nil {
 		switch err {
-		case workouts.ErrWorkoutNotFound:
+		case errs.ErrWorkoutNotFound:
 			return c.JSON(http.StatusNotFound, ErrDataNotFound)
-		case workouts.ErrInvalidAuthor:
+		case errs.ErrInvalidAuthor:
 			return c.JSON(http.StatusForbidden, ErrUnauthorized)
 		default:
-			wc.logger.Error("Failed to update workout", slog.Any("error", err))
+			wc.logger.Error("Failed to get workout by ID", slog.Any("error", err))
 			return c.JSON(http.StatusInternalServerError, ErrInternalServer)
 		}
 	}
 
-	return c.JSON(http.StatusOK, map[string]interface{}{
-		"message": "workout updated successfully",
-		"workout": updatedWorkout,
-	})
+	// Response sama seperti preview
+	response := map[string]interface{}{
+		"workout_name": map[string]interface{}{
+			"workout_name": workout.Name,
+			"goals":        workout.Goals,
+			"id":           workout.ID,
+			"user_id":      workout.UserID,
+		},
+	}
+
+	return c.JSON(http.StatusOK, response)
 }
 
 func (wc *WorkoutController) DeleteWorkout(c echo.Context) error {
@@ -162,9 +181,9 @@ func (wc *WorkoutController) DeleteWorkout(c echo.Context) error {
 	err = wc.service.DeleteWorkout(userID, workoutID)
 	if err != nil {
 		switch err {
-		case workouts.ErrInvalidAuthor:
+		case errs.ErrInvalidAuthor:
 			return c.JSON(http.StatusForbidden, ErrUnauthorized)
-		case workouts.ErrWorkoutNotFound:
+		case errs.ErrWorkoutNotFound:
 			return c.JSON(http.StatusNotFound, ErrDataNotFound)
 		default:
 			wc.logger.Error("Failed to delete workout", slog.Any("error", err))

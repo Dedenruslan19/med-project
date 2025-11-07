@@ -1,8 +1,9 @@
 package logs
 
 import (
-	"errors"
 	"log/slog"
+
+	errs "Dedenruslan19/med-project/service/errors"
 )
 
 type service struct {
@@ -12,7 +13,7 @@ type service struct {
 
 type Service interface {
 	CreateLog(userID int64, input LogInput) (ExerciseLog, error)
-	GetAllLogs() ([]ExerciseLog, error)
+	GetAllLogs(userID int64) ([]ExerciseLog, error)
 }
 
 func NewService(logger *slog.Logger, repo LogRepo) Service {
@@ -29,10 +30,6 @@ type LogInput struct {
 	SetCount   int64   `json:"set_count"`
 }
 
-var (
-	ErrLogNotFound = errors.New("log not found")
-)
-
 func (s *service) CreateLog(userID int64, input LogInput) (ExerciseLog, error) {
 	log := ExerciseLog{
 		UserID:     userID,
@@ -44,28 +41,28 @@ func (s *service) CreateLog(userID int64, input LogInput) (ExerciseLog, error) {
 
 	id, err := s.repo.Create(&log)
 	if err != nil {
-		s.logger.Error("Failed to create log",
+		s.logger.Error("failed to create log",
 			slog.Any("error", err),
 			slog.Int64("user_id", userID),
 		)
-		return ExerciseLog{}, errors.New("failed to create log")
+		return ExerciseLog{}, err
 	}
 
 	log.ID = id
 	return log, nil
 }
 
-func (s *service) GetAllLogs() ([]ExerciseLog, error) {
-	logs, err := s.repo.GetAll()
+func (s *service) GetAllLogs(userID int64) ([]ExerciseLog, error) {
+	logs, err := s.repo.GetByUserID(userID)
 	if err != nil {
-		s.logger.Error("Failed to get all logs",
+		s.logger.Error("failed to get all logs",
 			slog.Any("error", err),
 		)
-		return nil, errors.New("failed to fetch logs")
+		return nil, err
 	}
 
 	if len(logs) == 0 {
-		return nil, ErrLogNotFound
+		return nil, errs.ErrLogNotFound
 	}
 
 	return logs, nil

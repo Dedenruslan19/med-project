@@ -7,8 +7,6 @@ type Billing struct {
 	AppointmentID int64      `json:"appointment_id" gorm:"not null;index"`
 	TotalAmount   float64    `json:"total_amount" gorm:"type:decimal(10,2);not null"`
 	PaymentStatus string     `json:"payment_status" gorm:"type:varchar(50);default:'unpaid'"`
-	ExternalID    string     `json:"external_id" gorm:"type:varchar(255);unique"`
-	InvoiceURL    string     `json:"invoice_url" gorm:"type:text"`
 	PaidAt        *time.Time `json:"paid_at"`
 	CreatedAt     time.Time  `json:"created_at" gorm:"default:CURRENT_TIMESTAMP"`
 }

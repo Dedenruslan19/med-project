@@ -2,7 +2,7 @@ package diagnoses
 
 import "time"
 
-type Diagnosis struct {
+type Diagnose struct {
 	ID                    int64     `json:"id" gorm:"primaryKey;autoIncrement"`
 	AppointmentID         int64     `json:"appointment_id" gorm:"not null;index"`
 	DoctorID              int64     `json:"doctor_id" gorm:"not null"`
