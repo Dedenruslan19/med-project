@@ -1,2 +1,9 @@
 .env
 .DS_STORE
+test_payment.sh
+server
+clean_comments.py
+clean_comments.sh
+
+coverage.html
+coverage.out

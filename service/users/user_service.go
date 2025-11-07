@@ -2,9 +2,8 @@ package users
 
 import (
 	"Dedenruslan19/med-project/repository/rapidAPI/bmi"
+	errs "Dedenruslan19/med-project/service/errors"
 	"Dedenruslan19/med-project/util"
-	"errors"
-	"fmt"
 	"log/slog"
 
 	"golang.org/x/crypto/bcrypt"
@@ -31,15 +30,6 @@ func NewService(logger *slog.Logger, repo UserRepo, bmiRepo bmi.Repository) Serv
 	}
 }
 
-var (
-	ErrInvalidInput       = errors.New("invalid input")
-	ErrUserNotFound       = errors.New("user not found")
-	ErrInvalidPass        = errors.New("invalid password")
-	ErrHashFailed         = errors.New("failed to hash password")
-	ErrJWTFailed          = errors.New("failed to generate JWT token")
-	ErrEmailAlreadyExists = errors.New("email already registered")
-)
-
 func (s *service) Register(user User) (int64, error) {
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
 	if err != nil {
@@ -47,21 +37,18 @@ func (s *service) Register(user User) (int64, error) {
 			slog.String("emai;", user.Email),
 			slog.Any("error", err),
 		)
-		return 0, ErrHashFailed
+		return 0, errs.ErrHashFailed
 	}
 
 	user.Password = string(hashedPassword)
 
 	id, err := s.repo.Create(user)
 	if err != nil {
-		if errors.Is(err, ErrEmailAlreadyExists) {
-			return 0, ErrEmailAlreadyExists
-		}
 		s.logger.Error("Failed to create user in DB",
 			slog.String("email", user.Email),
 			slog.Any("error", err),
 		)
-		return 0, fmt.Errorf("failed to create user: %w", err)
+		return 0, err
 	}
 
 	return id, nil
@@ -75,12 +62,12 @@ func (s *service) Login(email, password string) (User, error) {
 			slog.String("email", email),
 			slog.Any("error", err),
 		)
-		return User{}, ErrUserNotFound
+		return User{}, errs.ErrUserNotFound
 	}
 
 	if err = bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
 		s.logger.Warn("Invalid password attempt", slog.String("email", email))
-		return User{}, ErrInvalidPass
+		return User{}, errs.ErrInvalidPass
 	}
 
 	token, err := util.GenerateJWT(user.ID, user.Email)
@@ -89,7 +76,7 @@ func (s *service) Login(email, password string) (User, error) {
 			slog.Int64("user_id", user.ID),
 			slog.Any("error", err),
 		)
-		return User{}, ErrJWTFailed
+		return User{}, errs.ErrJWTFailed
 	}
 	user.Token = token
 
@@ -103,7 +90,7 @@ func (s *service) GetUserByID(userID int64) (User, error) {
 			slog.Int64("user_id", userID),
 			slog.Any("error", err),
 		)
-		return User{}, ErrUserNotFound
+		return User{}, errs.ErrUserNotFound
 	}
 
 	return user, nil

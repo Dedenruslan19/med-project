@@ -1,9 +1,10 @@
 package controller
 
 import (
+	errs "Dedenruslan19/med-project/service/errors"
+	"Dedenruslan19/med-project/service/logs"
 	"errors"
 	"net/http"
-	"Dedenruslan19/med-project/service/logs"
 
 	"log/slog"
 
@@ -54,7 +55,7 @@ func (lc *LogController) CreateLog(c echo.Context) error {
 	newLog, err := lc.service.CreateLog(userID, input)
 	if err != nil {
 		lc.logger.Error("Failed to create log", slog.Any("error", err), slog.Int64("user_id", userID))
-		if errors.Is(err, logs.ErrLogNotFound) {
+		if errors.Is(err, errs.ErrLogNotFound) {
 			return c.JSON(http.StatusNotFound, ErrDataNotFound)
 		}
 		return c.JSON(http.StatusInternalServerError, ErrInternalServer)
@@ -67,10 +68,16 @@ func (lc *LogController) CreateLog(c echo.Context) error {
 }
 
 func (lc *LogController) GetAllLogs(c echo.Context) error {
-	logsList, err := lc.service.GetAllLogs()
+	userIDInterface := c.Get("user_id")
+	userID, ok := userIDInterface.(int64)
+	if !ok {
+		lc.logger.Warn("user_id not found or invalid in context")
+		return c.JSON(http.StatusUnauthorized, ErrUnauthorized)
+	}
+	logsList, err := lc.service.GetAllLogs(userID)
 	if err != nil {
 		lc.logger.Error("Failed to get all logs", slog.Any("error", err))
-		if errors.Is(err, logs.ErrLogNotFound) {
+		if errors.Is(err, errs.ErrLogNotFound) {
 			return c.JSON(http.StatusNotFound, ErrDataNotFound)
 		}
 		return c.JSON(http.StatusInternalServerError, ErrInternalServer)

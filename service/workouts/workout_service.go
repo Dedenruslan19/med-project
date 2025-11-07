@@ -2,8 +2,8 @@ package workouts
 
 import (
 	"Dedenruslan19/med-project/repository/gemini"
+	errs "Dedenruslan19/med-project/service/errors"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 )
@@ -16,10 +16,10 @@ type service struct {
 
 type Service interface {
 	GetAllWorkouts() ([]Workout, error)
-	GetWorkoutByID(workoutID int64) (*Workout, error)
-	CreateWorkout(userID int64, input WorkoutInput) (WorkoutWithExercises, error)
-	UpdateWorkout(userID, workoutID int64, input WorkoutInput) (Workout, error)
+	GetWorkoutByID(userID, workoutID int64) (*Workout, error)
+	CreateWorkout(userID int64, input SaveWorkoutRequest) (WorkoutWithExercises, error)
 	DeleteWorkout(userID, workoutID int64) error
+	PreviewWorkout(userID int64, input PreviewWorkoutRequest) (WorkoutWithExercises, error)
 }
 
 func NewService(logger *slog.Logger, repo WorkoutRepo, gemini gemini.Repository) Service {
@@ -29,12 +29,6 @@ func NewService(logger *slog.Logger, repo WorkoutRepo, gemini gemini.Repository)
 		gemini: gemini,
 	}
 }
-
-var (
-	ErrInvalidInput    = errors.New("invalid input")
-	ErrWorkoutNotFound = errors.New("workout not found")
-	ErrInvalidAuthor   = errors.New("invalid author")
-)
 
 func parseGeminiOutput(geminiOutput string) ([]GeneratedExercise, error) {
 	var raw []map[string]interface{}
@@ -69,20 +63,31 @@ type GeneratedExercise struct {
 }
 
 type WorkoutWithExercises struct {
-	Workout   Workout             `json:"workout"`
+	Workout   Workout             `json:"workout_name"`
 	Exercises []GeneratedExercise `json:"exercises"`
 }
 
-type WorkoutInput struct {
-	Name      string              `json:"name" validate:"required,min=2,max=255"`
-	Goals     string              `json:"goals" validate:"required"`
-	Exercises []GeneratedExercise `json:"exercises"`
+type PreviewWorkoutRequest struct {
+	WorkoutName string `json:"workout_name" validate:"required,min=2,max=255"`
+	Goals       string `json:"goals" validate:"required"`
+}
+
+type SaveWorkoutRequest struct {
+	WorkoutName WorkoutData         `json:"workout_name" validate:"required"`
+	Exercises   []GeneratedExercise `json:"exercises" validate:"required,dive"`
+}
+
+type WorkoutData struct {
+	WorkoutName string `json:"workout_name" validate:"required,min=2,max=255"`
+	Goals       string `json:"goals" validate:"required"`
+	ID          int64  `json:"id"`
+	UserID      int64  `json:"user_id"`
 }
 
 func (s *service) GetAllWorkouts() ([]Workout, error) {
 	workouts, err := s.repo.GetAll()
 	if err != nil {
-		s.logger.Error("Failed to get workouts",
+		s.logger.Error("failed to get workouts",
 			slog.Any("error", err),
 		)
 		return nil, err
@@ -90,58 +95,48 @@ func (s *service) GetAllWorkouts() ([]Workout, error) {
 	return workouts, nil
 }
 
-func (s *service) GetWorkoutByID(workoutID int64) (*Workout, error) {
+func (s *service) GetWorkoutByID(userID, workoutID int64) (*Workout, error) {
 	workout, err := s.repo.GetByID(workoutID)
 	if err != nil {
-		s.logger.Error("Failed to get id workout",
+		s.logger.Error("failed to get id workout",
 			slog.Any("error", err),
 			slog.Int64("workout_id", workoutID),
 		)
-		return nil, ErrWorkoutNotFound
+		return nil, errs.ErrWorkoutNotFound
 	}
+
+	if workout.UserID != userID {
+		return nil, errs.ErrInvalidAuthor
+	}
+
 	return workout, nil
 }
 
-func (s *service) CreateWorkout(userID int64, input WorkoutInput) (WorkoutWithExercises, error) {
+func (s *service) PreviewWorkout(userID int64, input PreviewWorkoutRequest) (WorkoutWithExercises, error) {
+	// Preview workout, doesnt save to DB
 	workout := Workout{
-		Name:   input.Name,
+		Name:   input.WorkoutName,
 		Goals:  input.Goals,
 		UserID: userID,
+		ID:     0,
 	}
 
-	id, err := s.repo.Create(&workout)
-	if err != nil {
-		s.logger.Error("Failed to create workout",
-			slog.Any("error", err),
-		)
-		return WorkoutWithExercises{}, err
-	}
-	workout.ID = id
-
-	// Generate exercises using Gemini
-	generateReq := gemini.GenerateRequest{
-		WorkoutID: workout.ID,
+	// Generate exercises via Gemini
+	raw, err := s.gemini.GenerateExercises(gemini.GenerateRequest{
+		WorkoutID: 0,
 		Target:    workout.Name,
 		Goal:      workout.Goals,
 		Equipment: []string{"bodyweight"},
-	}
-
-	raw, err := s.gemini.GenerateExercises(generateReq)
+	})
 	if err != nil {
-		s.logger.Error("Gemini error", slog.Any("error", err))
-		return WorkoutWithExercises{
-			Workout:   workout,
-			Exercises: []GeneratedExercise{},
-		}, nil
+		s.logger.Error("gemini error", slog.Any("error", err))
+		return WorkoutWithExercises{Workout: workout, Exercises: []GeneratedExercise{}}, nil
 	}
 
 	exercises, err := parseGeminiOutput(raw)
 	if err != nil {
-		s.logger.Error("Failed to parse Gemini output", slog.Any("error", err))
-		return WorkoutWithExercises{
-			Workout:   workout,
-			Exercises: []GeneratedExercise{},
-		}, nil
+		s.logger.Error("failed to parse Gemini output", slog.Any("error", err))
+		return WorkoutWithExercises{Workout: workout, Exercises: []GeneratedExercise{}}, nil
 	}
 
 	return WorkoutWithExercises{
@@ -150,63 +145,62 @@ func (s *service) CreateWorkout(userID int64, input WorkoutInput) (WorkoutWithEx
 	}, nil
 }
 
-func (s *service) UpdateWorkout(userID, workoutID int64, input WorkoutInput) (Workout, error) {
-	ownerID, err := s.repo.GetOwnerID(workoutID)
-	if err != nil {
-		s.logger.Error("Failed to get workout owner",
-			slog.Any("error", err),
-			slog.Int64("workout_id", workoutID),
-		)
-		return Workout{}, ErrWorkoutNotFound
-	}
-
-	if ownerID != userID {
-		return Workout{}, ErrInvalidAuthor
-	}
-
+func (s *service) CreateWorkout(userID int64, input SaveWorkoutRequest) (WorkoutWithExercises, error) {
 	workout := Workout{
-		ID:     workoutID,
-		Name:   input.Name,
-		Goals:  input.Goals,
+		Name:   input.WorkoutName.WorkoutName,
+		Goals:  input.WorkoutName.Goals,
 		UserID: userID,
 	}
-
-	if err = s.repo.Update(&workout); err != nil {
-		s.logger.Error("Failed to update workout",
-			slog.Any("error", err),
-			slog.Int64("workout_id", workoutID),
-		)
-		return Workout{}, err
-	}
-
-	updatedWorkout, err := s.repo.GetByID(workoutID)
+	id, err := s.repo.Create(&workout)
 	if err != nil {
-		s.logger.Error("Failed to get updated workout",
-			slog.Any("error", err),
-			slog.Int64("workout_id", workoutID),
-		)
-		return Workout{}, err
+		s.logger.Error("failed to create workout", slog.Any("error", err))
+		return WorkoutWithExercises{}, err
+	}
+	workout.ID = id
+
+	var exercises []GeneratedExercise
+	for _, ex := range input.Exercises {
+		exercise := Exercise{
+			WorkoutID: workout.ID,
+			Name:      ex.Name,
+			Sets:      ex.Sets,
+			Reps:      ex.Reps,
+			Equipment: ex.Equipment,
+		}
+		if err := s.repo.CreateExercise(&exercise); err != nil {
+			s.logger.Error("failed to create exercise", slog.Any("error", err))
+			continue
+		}
+		exercises = append(exercises, GeneratedExercise{
+			Name:      exercise.Name,
+			Sets:      exercise.Sets,
+			Reps:      exercise.Reps,
+			Equipment: exercise.Equipment,
+		})
 	}
 
-	return *updatedWorkout, nil
+	return WorkoutWithExercises{
+		Workout:   workout,
+		Exercises: exercises,
+	}, nil
 }
 
 func (s *service) DeleteWorkout(userID, workoutID int64) error {
 	ownerID, err := s.repo.GetOwnerID(workoutID)
 	if err != nil {
-		s.logger.Error("Failed to get workout owner",
+		s.logger.Error("failed to get workout owner",
 			slog.Any("error", err),
 			slog.Int64("workout_id", workoutID),
 		)
-		return ErrWorkoutNotFound
+		return errs.ErrWorkoutNotFound
 	}
 
 	if ownerID != userID {
-		return ErrInvalidAuthor
+		return errs.ErrInvalidAuthor
 	}
 
 	if err := s.repo.Delete(workoutID); err != nil {
-		s.logger.Error("Failed to delete workout",
+		s.logger.Error("failed to delete workout",
 			slog.Any("error", err),
 			slog.Int64("workout_id", workoutID),
 		)

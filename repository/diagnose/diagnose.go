@@ -7,59 +7,59 @@ import (
 	"gorm.io/gorm"
 )
 
-type diagnosisRepo struct {
+type diagnoseRepo struct {
 	db     *gorm.DB
 	logger *slog.Logger
 }
 
-func NewDiagnosisRepo(db *gorm.DB, logger *slog.Logger) diagnoses.DiagnosisRepo {
-	return &diagnosisRepo{db: db, logger: logger}
+func NewDiagnoseRepo(db *gorm.DB, logger *slog.Logger) diagnoses.DiagnoseRepo {
+	return &diagnoseRepo{db: db, logger: logger}
 }
 
-func (r *diagnosisRepo) Create(diagnosis *diagnoses.Diagnosis) (int64, error) {
-	result := r.db.Create(diagnosis)
+func (r *diagnoseRepo) Create(diagnose *diagnoses.Diagnose) (int64, error) {
+	result := r.db.Create(diagnose)
 	if result.Error != nil {
-		r.logger.Error("Failed to create diagnosis",
+		r.logger.Error("failed to create diagnose",
 			slog.Any("error", result.Error),
-			slog.Int64("appointment_id", diagnosis.AppointmentID),
+			slog.Int64("appointment_id", diagnose.AppointmentID),
 		)
 		return 0, result.Error
 	}
-	return diagnosis.ID, nil
+	return diagnose.ID, nil
 }
 
-func (r *diagnosisRepo) GetByID(id int64) (*diagnoses.Diagnosis, error) {
-	var diagnosis diagnoses.Diagnosis
-	result := r.db.Where("id = ?", id).First(&diagnosis)
+func (r *diagnoseRepo) GetByID(id int64) (*diagnoses.Diagnose, error) {
+	var diagnose diagnoses.Diagnose
+	result := r.db.Where("id = ?", id).First(&diagnose)
 	if result.Error != nil {
-		r.logger.Error("Failed to get diagnosis by ID",
+		r.logger.Error("Failed to get diagnose by ID",
 			slog.Any("error", result.Error),
-			slog.Int64("diagnosis_id", id),
+			slog.Int64("diagnose_id", id),
 		)
 		return nil, result.Error
 	}
-	return &diagnosis, nil
+	return &diagnose, nil
 }
 
-func (r *diagnosisRepo) GetByAppointmentID(appointmentID int64) (*diagnoses.Diagnosis, error) {
-	var diagnosis diagnoses.Diagnosis
-	result := r.db.Where("appointment_id = ?", appointmentID).First(&diagnosis)
+func (r *diagnoseRepo) GetByAppointmentID(appointmentID int64) (*diagnoses.Diagnose, error) {
+	var diagnose diagnoses.Diagnose
+	result := r.db.Where("appointment_id = ?", appointmentID).First(&diagnose)
 	if result.Error != nil {
-		r.logger.Error("Failed to get diagnosis by appointment ID",
+		r.logger.Error("failed to get diagnose by appointment ID",
 			slog.Any("error", result.Error),
 			slog.Int64("appointment_id", appointmentID),
 		)
 		return nil, result.Error
 	}
-	return &diagnosis, nil
+	return &diagnose, nil
 }
 
-func (r *diagnosisRepo) Update(diagnosis *diagnoses.Diagnosis) error {
-	result := r.db.Save(diagnosis)
+func (r *diagnoseRepo) Update(diagnose *diagnoses.Diagnose) error {
+	result := r.db.Save(diagnose)
 	if result.Error != nil {
-		r.logger.Error("Failed to update diagnosis",
+		r.logger.Error("failed to update diagnose",
 			slog.Any("error", result.Error),
-			slog.Int64("diagnosis_id", diagnosis.ID),
+			slog.Int64("diagnose_id", diagnose.ID),
 		)
 		return result.Error
 	}

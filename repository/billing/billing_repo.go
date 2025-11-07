@@ -3,7 +3,6 @@ package billing
 import (
 	"Dedenruslan19/med-project/service/billings"
 	"log/slog"
-	"time"
 
 	"gorm.io/gorm"
 )
@@ -55,36 +54,12 @@ func (r *billingRepo) GetByAppointmentID(appointmentID int64) (*billings.Billing
 	return &billing, nil
 }
 
-func (r *billingRepo) UpdatePaymentStatus(id int64, status string, invoiceURL string) error {
-	result := r.db.Model(&billings.Billing{}).
-		Where("id = ?", id).
-		Updates(map[string]interface{}{
-			"payment_status": status,
-			"invoice_url":    invoiceURL,
-		})
+func (r *billingRepo) Update(billing *billings.Billing) error {
+	result := r.db.Save(billing)
 	if result.Error != nil {
-		r.logger.Error("Failed to update payment status",
+		r.logger.Error("Failed to update billing",
 			slog.Any("error", result.Error),
-			slog.Int64("billing_id", id),
-			slog.String("status", status),
-		)
-		return result.Error
-	}
-	return nil
-}
-
-func (r *billingRepo) UpdatePaidAt(id int64) error {
-	now := time.Now()
-	result := r.db.Model(&billings.Billing{}).
-		Where("id = ?", id).
-		Updates(map[string]interface{}{
-			"payment_status": "paid",
-			"paid_at":        now,
-		})
-	if result.Error != nil {
-		r.logger.Error("Failed to update paid_at",
-			slog.Any("error", result.Error),
-			slog.Int64("billing_id", id),
+			slog.Int64("billing_id", billing.ID),
 		)
 		return result.Error
 	}

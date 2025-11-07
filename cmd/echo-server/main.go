@@ -12,17 +12,23 @@ import (
 
 	"Dedenruslan19/med-project/cmd/echo-server/controller"
 	"Dedenruslan19/med-project/cmd/echo-server/middleware"
+	"Dedenruslan19/med-project/repository/appointment"
 	"Dedenruslan19/med-project/repository/billing"
 	"Dedenruslan19/med-project/repository/diagnose"
+	"Dedenruslan19/med-project/repository/doctor"
 	"Dedenruslan19/med-project/repository/exercise"
 	"Dedenruslan19/med-project/repository/gemini"
+	"Dedenruslan19/med-project/repository/invoice"
 	"Dedenruslan19/med-project/repository/logs"
 	"Dedenruslan19/med-project/repository/rapidAPI/bmi"
 	"Dedenruslan19/med-project/repository/user"
 	"Dedenruslan19/med-project/repository/workout"
+	appointmentService "Dedenruslan19/med-project/service/appointments"
 	billingService "Dedenruslan19/med-project/service/billings"
-	diagnosisService "Dedenruslan19/med-project/service/diagnoses"
+	diagnoseService "Dedenruslan19/med-project/service/diagnoses"
+	doctorService "Dedenruslan19/med-project/service/doctors"
 	exerciseService "Dedenruslan19/med-project/service/exercises"
+	invoiceService "Dedenruslan19/med-project/service/invoices"
 	logService "Dedenruslan19/med-project/service/logs"
 	userService "Dedenruslan19/med-project/service/users"
 	workoutService "Dedenruslan19/med-project/service/workouts"
@@ -49,7 +55,7 @@ type Config struct {
 	DBName      string `env:"DB_NAME"`
 	DatabaseURL string `env:"DATABASE_URL"`
 
-	RapidAPIBMI string `env:"BMI_API_KEY"`
+	RapidAPIBMI string `env:"RAPIDAPI_BMI_API_KEY"`
 	GEMINI      string `env:"GEMINI_API_KEY"`
 }
 
@@ -99,13 +105,27 @@ func main() {
 	logSvc := logService.NewService(logger, logRepo)
 	logController := controller.NewLogController(logSvc, logger)
 
+	doctorRepo := doctor.NewDoctorRepository(logger, db)
+	doctorSvc := doctorService.NewService(logger, doctorRepo)
+	doctorController := controller.NewDoctorController(doctorSvc, logger)
+
+	appointmentRepo := appointment.NewAppointmentRepo(db, logger)
+	appointmentSvc := appointmentService.NewService(logger, appointmentRepo)
+	appointmentController := controller.NewAppointmentController(appointmentSvc, logger)
+
 	billingRepo := billing.NewBillingRepo(db, logger)
 	billingSvc := billingService.NewService(logger, billingRepo)
-	billingController := controller.NewBillingController(billingSvc, logger)
 
-	diagnosisRepo := diagnose.NewDiagnosisRepo(db, logger)
-	diagnosisSvc := diagnosisService.NewService(logger, diagnosisRepo)
-	diagnosisController := controller.NewDiagnosisController(diagnosisSvc, billingSvc, logger)
+	diagnoseRepo := diagnose.NewDiagnoseRepo(db, logger)
+	diagnoseSvc := diagnoseService.NewService(logger, diagnoseRepo, appointmentSvc)
+	diagnoseController := controller.NewDiagnoseController(diagnoseSvc, appointmentSvc, billingSvc, logger)
+
+	invoiceRepo := invoice.NewInvoiceRepo(db, logger)
+	invoiceSvc := invoiceService.NewService(logger, invoiceRepo)
+	invoiceController := controller.NewInvoiceController(invoiceSvc, billingSvc, appointmentSvc, diagnoseSvc, userSvc, doctorSvc, logger)
+
+	// Create billing controller with invoice service
+	billingController := controller.NewBillingController(billingSvc, invoiceSvc, logger)
 
 	// Setup Echo
 	e := echo.New()
@@ -133,17 +153,25 @@ func main() {
 	userMiddleware := userGroup.Group("", middleware.JWTMiddleware)
 	userMiddleware.GET("", userController.GetMe)
 
+	// doctors
+	doctorGroup := e.Group("/doctors")
+	doctorGroup.POST("/register", doctorController.Register, middleware.ValidateContentType)
+	doctorGroup.POST("/login", doctorController.Login, middleware.ValidateContentType)
+	doctorGroup.GET("", doctorController.GetAllDoctors, middleware.JWTMiddleware)
+
 	// workouts
 	workoutGroup := e.Group("/workouts", middleware.JWTMiddleware)
 	workoutGroup.POST("", workoutController.CreateWorkout, middleware.ValidateContentType)
+	workoutGroup.POST("/preview", workoutController.PreviewWorkout, middleware.ValidateContentType)
 	workoutGroup.GET("", workoutController.GetAllWorkouts)
 	workoutGroup.GET("/:id", workoutController.GetWorkoutByID)
-	workoutGroup.PUT("/:id", workoutController.UpdateWorkout, middleware.ValidateContentType)
 	workoutGroup.DELETE("/:id", workoutController.DeleteWorkout)
 
 	// exercises
 	exerciseGroup := e.Group("/exercises", middleware.JWTMiddleware)
 	exerciseGroup.POST("", exerciseController.CreateExercise, middleware.ValidateContentType)
+	exerciseGroup.GET("/:id", exerciseController.GetExercisesByWorkoutID)
+	exerciseGroup.PUT("/:id", exerciseController.UpdateExercise, middleware.ValidateContentType)
 	exerciseGroup.DELETE("/:id", exerciseController.DeleteExercise)
 
 	// logs
@@ -151,19 +179,30 @@ func main() {
 	logGroup.POST("", logController.CreateLog)
 	logGroup.GET("", logController.GetAllLogs)
 
-	// billings
-	billingGroup := e.Group("/billings", middleware.JWTMiddleware)
-	billingGroup.POST("", billingController.CreateBilling, middleware.ValidateContentType)
-	billingGroup.GET("/:id", billingController.GetBillingByID)
-	billingGroup.GET("/appointment/:appointment_id", billingController.GetBillingByAppointmentID)
-	billingGroup.PUT("/:id/payment-status", billingController.UpdatePaymentStatus, middleware.ValidateContentType)
+	// appointments
+	appointmentGroup := e.Group("/appointments", middleware.JWTMiddleware)
+	appointmentGroup.POST("", appointmentController.CreateAppointment, middleware.ValidateContentType)
+	appointmentGroup.GET("", appointmentController.GetAppointmentsByUser)
+	appointmentGroup.GET("/:id", appointmentController.GetAppointmentByID)
 
 	// diagnoses
-	diagnosisGroup := e.Group("/diagnoses", middleware.JWTMiddleware)
-	diagnosisGroup.POST("", diagnosisController.CreateDiagnosis, middleware.ValidateContentType)
-	diagnosisGroup.GET("/:id", diagnosisController.GetDiagnosisByID)
-	diagnosisGroup.GET("/appointment/:appointment_id", diagnosisController.GetDiagnosisByAppointmentID)
-	diagnosisGroup.PUT("/:id", diagnosisController.UpdateDiagnosis, middleware.ValidateContentType)
+	diagnoseGroup := e.Group("/diagnoses", middleware.JWTMiddleware, middleware.DoctorOnly)
+	diagnoseGroup.POST("", diagnoseController.CreateDiagnose, middleware.ValidateContentType)
+	diagnoseGroup.GET("/:id", diagnoseController.GetDiagnoseByID)
+	diagnoseGroup.GET("/appointment/:appointment_id", diagnoseController.GetDiagnoseByAppointmentID)
+	diagnoseGroup.PUT("/:id", diagnoseController.UpdateDiagnose, middleware.ValidateContentType)
+
+	// billings
+	billingGroup := e.Group("/billings", middleware.JWTMiddleware)
+	billingGroup.GET("/:id", billingController.GetBillingByID)
+	billingGroup.GET("/appointment/:appointment_id", billingController.GetBillingByAppointmentID)
+	billingGroup.POST("/:id/create-invoice", billingController.CreateInvoice, middleware.ValidateContentType)
+	billingGroup.PUT("/:id/payment-status", billingController.UpdatePaymentStatus, middleware.ValidateContentType)
+
+	// invoices
+	invoiceGroup := e.Group("/invoices", middleware.JWTMiddleware)
+	invoiceGroup.GET("/billing/:billing_id", invoiceController.GetInvoiceByBillingID)
+	invoiceGroup.PUT("/:id/mark-sent", invoiceController.MarkInvoiceAsSent)
 
 	// Detect port from Railway
 	port := os.Getenv("PORT")

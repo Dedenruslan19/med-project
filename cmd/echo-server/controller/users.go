@@ -1,9 +1,10 @@
 package controller
 
 import (
+	errs "Dedenruslan19/med-project/service/errors"
+	"Dedenruslan19/med-project/service/users"
 	"errors"
 	"net/http"
-	"Dedenruslan19/med-project/service/users"
 
 	"log/slog"
 
@@ -83,11 +84,11 @@ func (uc *UserController) Register(c echo.Context) error {
 
 	if err != nil {
 		switch {
-		case errors.Is(err, users.ErrEmailAlreadyExists):
+		case errors.Is(err, errs.ErrEmailAlreadyExists):
 			return c.JSON(http.StatusBadRequest, ErrEmailExists)
-		case errors.Is(err, users.ErrInvalidInput):
+		case errors.Is(err, errs.ErrInvalidInput):
 			return c.JSON(http.StatusBadRequest, ErrInvalidRequestBody)
-		case errors.Is(err, users.ErrHashFailed):
+		case errors.Is(err, errs.ErrHashFailed):
 			uc.logger.Error("Failed to hash password",
 				slog.String("email", input.Email),
 				slog.Any("error", err))
@@ -135,9 +136,9 @@ func (uc *UserController) Login(c echo.Context) error {
 	user, err := uc.userService.Login(input.Email, input.Password)
 	if err != nil {
 		switch {
-		case errors.Is(err, users.ErrUserNotFound):
+		case errors.Is(err, errs.ErrUserNotFound):
 			return c.JSON(http.StatusNotFound, ErrDataNotFound)
-		case errors.Is(err, users.ErrInvalidPass):
+		case errors.Is(err, errs.ErrInvalidPass):
 			return c.JSON(http.StatusBadRequest, map[string]interface{}{
 				"message": "password doesn't match",
 			})
@@ -180,7 +181,7 @@ func (uc *UserController) GetMe(c echo.Context) error {
 
 	message := "success"
 	if usedCallback {
-		message = "disconnected from third API returning callback"
+		message = "success from callback"
 	}
 
 	res := APIResponse{

@@ -1,13 +1,14 @@
 openapi: 3.0.0
 info:
-  title: "FitWell API - End-to-End Payment"
+  title: "FitConnect API - End-to-End Payment"
   version: "1.0.0"
   description: |
-    API FitWell untuk workout tracking, appointment dengan dokter,
-    diagnosa, resep obat, dan pembayaran konsultasi + obat via Xendit.
+    API FitConnect untuk workout tracking, appointment dengan dokter,
+    diagnosa, resep obat, dan pembayaran konsultasi + obat.
 
 servers:
-  - url: http://localhost:8080/api
+  - url: http://localhost:8080
+    description: Local development server
 
 tags:
   - name: Users
@@ -18,7 +19,7 @@ tags:
   - name: Appointments
   - name: Diagnoses
   - name: Billings
-  - name: Payments
+  - name: Invoices
 
 components:
   securitySchemes:
@@ -51,8 +52,9 @@ components:
         id: { type: integer }
         workout_id: { type: integer }
         name: { type: string }
-        sets: { type: integer }
-        reps: { type: integer }
+        description: { type: string }
+        sets: { type: string, example: "3-4" }
+        reps: { type: string, example: "10-15" }
         equipment: { type: string }
 
     ExerciseLog:
@@ -103,6 +105,19 @@ components:
         invoice_url: { type: string }
         created_at: { type: string, format: date-time }
         paid_at: { type: string, format: date-time }
+
+    Invoice:
+      type: object
+      properties:
+        id: { type: integer }
+        billing_id: { type: integer }
+        user_id: { type: integer }
+        doctor_id: { type: integer }
+        consultation_fee: { type: number, format: float }
+        medication_cost: { type: number, format: float }
+        total_amount: { type: number, format: float }
+        invoice_date: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
 
 paths:
 
@@ -161,7 +176,75 @@ paths:
                   message: { type: string }
                   access_token: { type: string }
 
+  /users:
+    get:
+      tags: [Users]
+      summary: Get current user profile (with BMI)
+      security: [{ BearerAuth: [] }]
+      responses:
+        "200":
+          description: User profile with calculated BMI
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  data:
+                    type: object
+                    properties:
+                      id: { type: integer }
+                      full_name: { type: string }
+                      email: { type: string }
+                      weight: { type: number, format: float }
+                      height: { type: number, format: float }
+                      bmi: { type: number, format: float }
+                      bmi_category: { type: string }
+
   # Workouts
+  /workouts/preview:
+    post:
+      tags: [Workouts]
+      summary: Preview workout with AI-generated exercises (Gemini)
+      description: Generate workout preview with exercises using Gemini AI without saving to database
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [workout_name, goals]
+              properties:
+                workout_name: { type: string, example: "Morning Cardio" }
+                goals: { type: string, example: "Improve cardiovascular health and burn calories" }
+      responses:
+        "200":
+          description: Workout preview with AI-generated exercises
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  data:
+                    type: object
+                    properties:
+                      workout_name:
+                        type: object
+                        properties:
+                          workout_name: { type: string }
+                          goals: { type: string }
+                      exercises:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            name: { type: string }
+                            sets: { type: string, example: "3-4" }
+                            reps: { type: string, example: "10-15" }
+                            equipment: { type: string }
+
   /workouts:
     get:
       tags: [Workouts]
@@ -173,13 +256,18 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/Workout"
+                type: object
+                properties:
+                  message: { type: string }
+                  workouts:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Workout"
 
     post:
       tags: [Workouts]
-      summary: Create workout and generate exercises (preview)
+      summary: Save workout with exercises to database
+      description: Create and save workout with selected exercises
       security: [{ BearerAuth: [] }]
       requestBody:
         required: true
@@ -187,13 +275,27 @@ paths:
           application/json:
             schema:
               type: object
-              required: [name, goals]
+              required: [workout_name, exercises]
               properties:
-                name: { type: string }
-                goals: { type: string }
+                workout_name:
+                  type: object
+                  required: [workout_name, goals]
+                  properties:
+                    workout_name: { type: string }
+                    goals: { type: string }
+                exercises:
+                  type: array
+                  items:
+                    type: object
+                    required: [name]
+                    properties:
+                      name: { type: string }
+                      sets: { type: string }
+                      reps: { type: string }
+                      equipment: { type: string }
       responses:
         "201":
-          description: Workout created with generated exercises (not saved)
+          description: Workout created and saved successfully
           content:
             application/json:
               schema:
@@ -203,32 +305,22 @@ paths:
                   data:
                     type: object
                     properties:
-                      workout:
+                      workout_name:
                         $ref: "#/components/schemas/Workout"
                       exercises:
                         type: array
                         items:
                           type: object
                           properties:
-                            id:
-                              type: integer
-                              nullable: true
-                              description: "null karena belum disimpan"
-                            workout_id:
-                              type: integer
-                            name:
-                              type: string
-                            sets:
-                              type: integer
-                            reps:
-                              type: integer
-                            equipment:
-                              type: string
+                            name: { type: string }
+                            sets: { type: string }
+                            reps: { type: string }
+                            equipment: { type: string }
 
   /workouts/{id}:
     get:
       tags: [Workouts]
-      summary: Get workout details including exercises
+      summary: Get workout details by ID
       security: [{ BearerAuth: [] }]
       parameters:
         - in: path
@@ -241,33 +333,15 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Workout"
-
-    put:
-      tags: [Workouts]
-      summary: Update workout
-      security: [{ BearerAuth: [] }]
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema: { type: integer }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                name: { type: string }
-                goals: { type: string }
-      responses:
-        "200":
-          description: Workout updated
+                type: object
+                properties:
+                  message: { type: string }
+                  data:
+                    $ref: "#/components/schemas/Workout"
 
     delete:
       tags: [Workouts]
-      summary: Delete workout and exercises
+      summary: Delete workout
       security: [{ BearerAuth: [] }]
       parameters:
         - in: path
@@ -276,13 +350,19 @@ paths:
           schema: { type: integer }
       responses:
         "200":
-          description: Workout deleted
+          description: Workout deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
 
   # Exercises
   /exercises:
     post:
       tags: [Exercises]
-      summary: Create exercise
+      summary: Create exercise for a workout
       security: [{ BearerAuth: [] }]
       requestBody:
         required: true
@@ -290,19 +370,93 @@ paths:
           application/json:
             schema:
               type: object
-              required: [workout_id, name]
+              required: [workout_id, name, description]
               properties:
                 workout_id: { type: integer }
                 name: { type: string }
                 description: { type: string }
-                sets: { type: integer }
-                reps: { type: integer }
+                sets: { type: string, example: "3-4" }
+                reps: { type: string, example: "10-15" }
                 equipment: { type: string }
       responses:
         "201":
-          description: Exercise created
+          description: Exercise created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  data:
+                    $ref: "#/components/schemas/Exercise"
 
   /exercises/{id}:
+    get:
+      tags: [Exercises]
+      summary: Get exercises by workout ID
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+          description: Workout ID
+      responses:
+        "200":
+          description: List of exercises for the workout
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  exercises:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: integer }
+                        exercise_name: { type: string }
+                        sets: { type: string }
+                        reps: { type: string }
+                        equipment: { type: string }
+
+    put:
+      tags: [Exercises]
+      summary: Update exercise
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+          description: Exercise ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [workout_id, name, description]
+              properties:
+                workout_id: { type: integer }
+                name: { type: string }
+                description: { type: string }
+                sets: { type: string }
+                reps: { type: string }
+                equipment: { type: string }
+      responses:
+        "200":
+          description: Exercise updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  data:
+                    $ref: "#/components/schemas/Exercise"
+
     delete:
       tags: [Exercises]
       summary: Delete exercise
@@ -312,9 +466,16 @@ paths:
           name: id
           required: true
           schema: { type: integer }
+          description: Exercise ID
       responses:
         "200":
-          description: Exercise deleted
+          description: Exercise deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
 
   # Exercise Logs
   /logs:
@@ -353,6 +514,59 @@ paths:
           description: Log created
 
   # Doctors
+  /doctors/register:
+    post:
+      tags: [Doctors]
+      summary: Register new doctor
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [full_name, email, password, specialization]
+              properties:
+                full_name: { type: string }
+                email: { type: string }
+                password: { type: string }
+                specialization: { type: string }
+      responses:
+        "201":
+          description: Doctor registered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  data:
+                    $ref: "#/components/schemas/Doctor"
+
+  /doctors/login:
+    post:
+      tags: [Doctors]
+      summary: Login doctor
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  access_token: { type: string }
+
   /doctors:
     get:
       tags: [Doctors]
@@ -380,9 +594,13 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/Appointment"
+                type: object
+                properties:
+                  message: { type: string }
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Appointment"
 
     post:
       tags: [Appointments]
@@ -397,11 +615,41 @@ paths:
               required: [doctor_id, appointment_date]
               properties:
                 doctor_id: { type: integer }
-                appointment_date: { type: string, format: date-time }
+                appointment_date: { type: string, format: date-time, example: "2025-11-10T10:00:00Z" }
                 notes: { type: string }
       responses:
         "201":
           description: Appointment created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  data:
+                    $ref: "#/components/schemas/Appointment"
+        "409":
+          description: Doctor is not available at the requested time
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: string }
+
+  /appointments/{id}:
+    get:
+      tags: [Appointments]
+      summary: Get appointment by ID
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Appointment details
           content:
             application/json:
               schema:
@@ -488,7 +736,12 @@ paths:
   /billings/{id}/payment-status:
     put:
       tags: [Billings]
-      summary: Update payment status
+      summary: Update payment status and auto-create invoice when paid
+      description: |
+        Update payment status for a billing. When payment_status is changed to "paid",
+        an invoice will be automatically created with:
+        - Consultation fee: Rp 200,000
+        - Medication costs: Calculated from diagnosis
       security: [{ BearerAuth: [] }]
       parameters:
         - in: path
@@ -507,13 +760,110 @@ paths:
                 invoice_url: { type: string }
       responses:
         "200":
-          description: Payment status updated successfully
+          description: Payment status updated successfully (and invoice auto-created if paid)
           content:
             application/json:
               schema:
                 type: object
                 properties:
                   message: { type: string }
+
+  /billings/{id}/create-invoice:
+    post:
+      tags: [Billings]
+      summary: Manually create invoice for a billing
+      description: Create invoice manually (alternative to auto-creation on payment status update)
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      responses:
+        "201":
+          description: Invoice created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  invoice:
+                    type: object
+                    properties:
+                      id: { type: integer }
+                      billing_id: { type: integer }
+                      user_id: { type: integer }
+                      doctor_id: { type: integer }
+                      consultation_fee: { type: number, format: float }
+                      medication_cost: { type: number, format: float }
+                      total_amount: { type: number, format: float }
+                      invoice_date: { type: string, format: date-time }
+
+  # Invoices
+  /invoices/{id}:
+    get:
+      tags: [Billings]
+      summary: Get invoice details by ID
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Invoice details with full information
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  data:
+                    type: object
+                    properties:
+                      invoice:
+                        type: object
+                        properties:
+                          id: { type: integer }
+                          billing_id: { type: integer }
+                          user_id: { type: integer }
+                          doctor_id: { type: integer }
+                          consultation_fee: { type: number, format: float }
+                          medication_cost: { type: number, format: float }
+                          total_amount: { type: number, format: float }
+                          invoice_date: { type: string, format: date-time }
+                      user:
+                        type: object
+                        properties:
+                          id: { type: integer }
+                          full_name: { type: string }
+                          email: { type: string }
+                      doctor:
+                        type: object
+                        properties:
+                          id: { type: integer }
+                          full_name: { type: string }
+                          specialization: { type: string }
+                      appointment:
+                        type: object
+                        properties:
+                          id: { type: integer }
+                          appointment_date: { type: string, format: date-time }
+                          status: { type: string }
+                      diagnosis:
+                        type: object
+                        properties:
+                          id: { type: integer }
+                          notes: { type: string }
+                          prescribed_medications: { type: string }
+                      billing:
+                        type: object
+                        properties:
+                          id: { type: integer }
+                          payment_status: { type: string }
+                          paid_at: { type: string, format: date-time }
 
   # Diagnoses
   /diagnoses:

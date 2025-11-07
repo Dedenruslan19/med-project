@@ -4,6 +4,7 @@ import (
 	"errors"
 	"log/slog"
 
+	errs "Dedenruslan19/med-project/service/errors"
 	service "Dedenruslan19/med-project/service/exercises"
 
 	"gorm.io/gorm"
@@ -31,6 +32,15 @@ func (r *exerciseRepo) GetByID(exerciseID int64) (*service.Exercise, error) {
 	return &exercise, nil
 }
 
+func (r *exerciseRepo) GetByWorkoutID(workoutID int64) ([]service.Exercise, error) {
+	var exercises []service.Exercise
+	if err := r.db.Where("workout_id = ?", workoutID).Find(&exercises).Error; err != nil {
+		r.logger.Error("failed to get exercises by workout_id", "workout_id", workoutID, "error", err)
+		return nil, err
+	}
+	return exercises, nil
+}
+
 func (r *exerciseRepo) Create(exercise *service.Exercise) (int64, error) {
 	newExercise := service.Exercise{
 		Name:      exercise.Name,
@@ -47,6 +57,27 @@ func (r *exerciseRepo) Create(exercise *service.Exercise) (int64, error) {
 	return newExercise.ID, nil
 }
 
+func (r *exerciseRepo) Update(exercise *service.Exercise) error {
+	result := r.db.Model(&service.Exercise{}).Where("id = ?", exercise.ID).Updates(map[string]interface{}{
+		"name":      exercise.Name,
+		"equipment": exercise.Equipment,
+		"sets":      exercise.Sets,
+		"reps":      exercise.Reps,
+	})
+
+	if result.Error != nil {
+		r.logger.Error("failed to update exercise", "exercise_id", exercise.ID, "error", result.Error)
+		return result.Error
+	}
+
+	if result.RowsAffected == 0 {
+		r.logger.Error("exercise not found when updating", "exercise_id", exercise.ID)
+		return errs.ErrExerciseNotFound
+	}
+
+	return nil
+}
+
 func (r *exerciseRepo) Delete(exerciseID int64) error {
 	result := r.db.Delete(&service.Exercise{}, exerciseID)
 	if result.Error != nil {
@@ -55,7 +86,7 @@ func (r *exerciseRepo) Delete(exerciseID int64) error {
 	}
 	if result.RowsAffected == 0 {
 		r.logger.Error("exercise not found when deleting", "exercise_id", exerciseID)
-		return service.ErrExerciseNotFound
+		return errs.ErrExerciseNotFound
 	}
 	return nil
 }
