@@ -188,9 +188,6 @@ func main() {
 	// diagnoses
 	diagnoseGroup := e.Group("/diagnoses", middleware.JWTMiddleware, middleware.DoctorOnly)
 	diagnoseGroup.POST("", diagnoseController.CreateDiagnose, middleware.ValidateContentType)
-	diagnoseGroup.GET("/:id", diagnoseController.GetDiagnoseByID)
-	diagnoseGroup.GET("/appointment/:appointment_id", diagnoseController.GetDiagnoseByAppointmentID)
-	diagnoseGroup.PUT("/:id", diagnoseController.UpdateDiagnose, middleware.ValidateContentType)
 
 	// billings
 	billingGroup := e.Group("/billings", middleware.JWTMiddleware)

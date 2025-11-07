@@ -13,7 +13,7 @@ FitConnect is a comprehensive fitness and healthcare platform built with Go, com
 ### Medical Module
 - **Doctor Registration & Authentication** - Separate authentication for medical professionals
 - **Appointment System** - Book appointments with doctors
-- **Diagnosis Management** - Create and update patient diagnoses
+- **Diagnosis Management** - Create patient diagnoses with medications
 - **Medication Prescription** - Prescribe medications with automatic cost calculation
 - **Billing System** - Automatic billing generation based on consultation and medication costs
 - **Invoice Generation** - Auto-create invoices when payment is confirmed
