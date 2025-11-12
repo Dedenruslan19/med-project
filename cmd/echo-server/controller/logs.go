@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"Dedenruslan19/med-project/cmd/echo-server/middleware"
 	errs "Dedenruslan19/med-project/service/errors"
 	"Dedenruslan19/med-project/service/logs"
 	"errors"
@@ -27,8 +28,7 @@ func NewLogController(service logs.Service, logger *slog.Logger) *LogController 
 }
 
 func (lc *LogController) CreateLog(c echo.Context) error {
-	userIDInterface := c.Get("user_id")
-	userID, ok := userIDInterface.(int64)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		lc.logger.Warn("user_id not found or invalid in context")
 		return c.JSON(http.StatusUnauthorized, ErrUnauthorized)
@@ -68,8 +68,7 @@ func (lc *LogController) CreateLog(c echo.Context) error {
 }
 
 func (lc *LogController) GetAllLogs(c echo.Context) error {
-	userIDInterface := c.Get("user_id")
-	userID, ok := userIDInterface.(int64)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		lc.logger.Warn("user_id not found or invalid in context")
 		return c.JSON(http.StatusUnauthorized, ErrUnauthorized)

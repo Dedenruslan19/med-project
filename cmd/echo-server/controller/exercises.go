@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"Dedenruslan19/med-project/cmd/echo-server/middleware"
 	errs "Dedenruslan19/med-project/service/errors"
 	"Dedenruslan19/med-project/service/exercises"
 
@@ -29,10 +30,9 @@ func NewExerciseController(service exercises.Service, logger *slog.Logger) *Exer
 }
 
 func (ec *ExerciseController) CreateExercise(c echo.Context) error {
-	userIDInterface := c.Get("user_id")
-	userID, ok := userIDInterface.(int64)
+	userID, ok := middleware.GetUserID(c)
 	if !ok || userID == 0 {
-		ec.logger.Error("invalid or missing user_id in token", slog.Any("user_id_value", userIDInterface))
+		ec.logger.Error("invalid or missing user_id in token")
 		return c.JSON(http.StatusUnauthorized, ErrUnauthorized)
 	}
 
@@ -75,7 +75,10 @@ func (ec *ExerciseController) CreateExercise(c echo.Context) error {
 }
 
 func (ec *ExerciseController) GetExercisesByWorkoutID(c echo.Context) error {
-	userID := c.Get("user_id").(int64)
+	userID, ok := middleware.GetUserID(c)
+	if !ok {
+		return c.JSON(http.StatusUnauthorized, ErrUnauthorized)
+	}
 	workoutID, _ := strconv.ParseInt(c.Param("id"), 10, 64)
 
 	exercisesList, err := ec.service.GetExercisesByWorkoutID(userID, workoutID)
@@ -104,10 +107,9 @@ func (ec *ExerciseController) GetExercisesByWorkoutID(c echo.Context) error {
 }
 
 func (ec *ExerciseController) UpdateExercise(c echo.Context) error {
-	userIDInterface := c.Get("user_id")
-	userID, ok := userIDInterface.(int64)
+	userID, ok := middleware.GetUserID(c)
 	if !ok || userID == 0 {
-		ec.logger.Error("invalid or missing user_id in token", slog.Any("user_id_value", userIDInterface))
+		ec.logger.Error("invalid or missing user_id in token")
 		return c.JSON(http.StatusUnauthorized, ErrUnauthorized)
 	}
 
@@ -154,10 +156,9 @@ func (ec *ExerciseController) UpdateExercise(c echo.Context) error {
 }
 
 func (ec *ExerciseController) DeleteExercise(c echo.Context) error {
-	userIDInterface := c.Get("user_id")
-	userID, ok := userIDInterface.(int64)
+	userID, ok := middleware.GetUserID(c)
 	if !ok || userID == 0 {
-		ec.logger.Error("invalid or missing user_id in token", slog.Any("user_id_value", userIDInterface))
+		ec.logger.Error("invalid or missing user_id in token")
 		return c.JSON(http.StatusUnauthorized, ErrUnauthorized)
 	}
 

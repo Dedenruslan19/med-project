@@ -48,3 +48,7 @@ func (r *invoiceRepository) UpdateSentAt(id int64) error {
 	now := time.Now()
 	return r.db.Model(&invoices.Invoice{}).Where("id = ?", id).Update("sent_at", now).Error
 }
+
+func (r *invoiceRepository) SendInvoiceEmail(id int64, email string) error {
+	return nil
+}
