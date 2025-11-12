@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"Dedenruslan19/med-project/cmd/echo-server/middleware"
 	"Dedenruslan19/med-project/service/appointments"
 	"Dedenruslan19/med-project/service/billings"
 	"Dedenruslan19/med-project/service/diagnoses"
@@ -60,17 +61,35 @@ func (ic *InvoiceController) GetInvoiceByBillingID(c echo.Context) error {
 			"error": "Invoice not found",
 		})
 	}
+
+	// Authorization: ensure caller is the appointment's doctor
+	doctorIDFromToken, ok := middleware.GetUserID(c)
+	if !ok {
+		ic.logger.Error("Failed to get doctor ID from token")
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Unauthorized"})
+	}
+
 	billing, err := ic.billingService.GetByID(invoice.BillingID)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{
 			"error": "Failed to get billing details",
 		})
 	}
+
 	appointment, err := ic.appointmentService.GetByID(billing.AppointmentID)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{
 			"error": "Failed to get appointment details",
 		})
+	}
+
+	if appointment.DoctorID != doctorIDFromToken {
+		ic.logger.Warn("doctor attempting to access invoice for another doctor's appointment",
+			slog.Int64("token_doctor_id", doctorIDFromToken),
+			slog.Int64("appointment_doctor_id", appointment.DoctorID),
+			slog.Int64("appointment_id", appointment.ID),
+		)
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "You are not authorized to view this invoice"})
 	}
 	user, err := ic.userService.GetUserByID(appointment.UserID)
 	if err != nil {
@@ -131,28 +150,66 @@ func (ic *InvoiceController) GetInvoiceByBillingID(c echo.Context) error {
 	})
 }
 
-// MarkInvoiceAsSent - Mark invoice as sent to email
-func (ic *InvoiceController) MarkInvoiceAsSent(c echo.Context) error {
-	idParam := c.Param("id")
-	id, err := strconv.ParseInt(idParam, 10, 64)
-	if err != nil {
+func (ic *InvoiceController) SendInvoice(c echo.Context) error {
+	type SendInvoiceRequest struct {
+		BillingID int64  `json:"billing_id" validate:"required"`
+		Email     string `json:"email" validate:"required,email"`
+	}
+
+	var req SendInvoiceRequest
+	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{
-			"error": "Invalid invoice ID",
+			"error": "Invalid request payload",
 		})
 	}
 
-	err = ic.invoiceService.MarkAsSent(id)
+	// Authorization: ensure caller is the appointment's doctor for this billing
+	doctorIDFromToken, ok := middleware.GetUserID(c)
+	if !ok {
+		ic.logger.Error("Failed to get doctor ID from token")
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Unauthorized"})
+	}
+
+	billing, err := ic.billingService.GetByID(req.BillingID)
 	if err != nil {
-		ic.logger.Error("Failed to mark invoice as sent",
+		ic.logger.Error("Failed to get billing for ownership check",
 			slog.Any("error", err),
-			slog.Int64("invoice_id", id),
+			slog.Int64("billing_id", req.BillingID),
+		)
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to get billing"})
+	}
+
+	appointment, err := ic.appointmentService.GetByID(billing.AppointmentID)
+	if err != nil {
+		ic.logger.Error("Failed to get appointment for ownership check",
+			slog.Any("error", err),
+			slog.Int64("appointment_id", billing.AppointmentID),
+		)
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to get appointment"})
+	}
+
+	if appointment.DoctorID != doctorIDFromToken {
+		ic.logger.Warn("doctor attempting to send invoice for another doctor's appointment",
+			slog.Int64("token_doctor_id", doctorIDFromToken),
+			slog.Int64("appointment_doctor_id", appointment.DoctorID),
+			slog.Int64("billing_id", req.BillingID),
+		)
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "You are not authorized to send invoice for this billing"})
+	}
+
+	invoice, err := ic.invoiceService.SendInvoice(req.BillingID, req.Email)
+	if err != nil {
+		ic.logger.Error("Failed to send invoice",
+			slog.Any("error", err),
+			slog.Int64("billing_id", req.BillingID),
 		)
 		return c.JSON(http.StatusInternalServerError, map[string]string{
-			"error": "Failed to mark invoice as sent",
+			"error": err.Error(),
 		})
 	}
 
-	return c.JSON(http.StatusOK, map[string]string{
-		"message": "Invoice marked as sent successfully",
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"message": "Invoice sent successfully",
+		"data":    invoice,
 	})
 }

@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"Dedenruslan19/med-project/cmd/echo-server/middleware"
 	"Dedenruslan19/med-project/service/appointments"
 	errs "Dedenruslan19/med-project/service/errors"
 	"errors"
@@ -34,8 +35,7 @@ type CreateAppointmentRequest struct {
 }
 
 func (ac *AppointmentController) CreateAppointment(c echo.Context) error {
-	userIDInterface := c.Get("user_id")
-	userID, ok := userIDInterface.(int64)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		return c.JSON(http.StatusUnauthorized, map[string]string{
 			"error": "Unauthorized",
@@ -96,8 +96,7 @@ func (ac *AppointmentController) CreateAppointment(c echo.Context) error {
 }
 
 func (ac *AppointmentController) GetAppointmentsByUser(c echo.Context) error {
-	userIDInterface := c.Get("user_id")
-	userID, ok := userIDInterface.(int64)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		return c.JSON(http.StatusUnauthorized, map[string]string{
 			"error": "Unauthorized",

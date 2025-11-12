@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"Dedenruslan19/med-project/cmd/echo-server/middleware"
 	errs "Dedenruslan19/med-project/service/errors"
 	"Dedenruslan19/med-project/service/workouts"
 
@@ -40,8 +41,7 @@ func (wc *WorkoutController) GetAllWorkouts(c echo.Context) error {
 	})
 }
 func (wc *WorkoutController) PreviewWorkout(c echo.Context) error {
-	userIDInterface := c.Get("user_id")
-	userID, ok := userIDInterface.(int64)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		return c.JSON(http.StatusUnauthorized, ErrUnauthorized)
 	}
@@ -83,8 +83,7 @@ func (wc *WorkoutController) PreviewWorkout(c echo.Context) error {
 	return c.JSON(http.StatusOK, response)
 }
 func (wc *WorkoutController) CreateWorkout(c echo.Context) error {
-	userIDInterface := c.Get("user_id")
-	userID, ok := userIDInterface.(int64)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		return c.JSON(http.StatusUnauthorized, ErrUnauthorized)
 	}
@@ -127,8 +126,7 @@ func (wc *WorkoutController) CreateWorkout(c echo.Context) error {
 }
 
 func (wc *WorkoutController) GetWorkoutByID(c echo.Context) error {
-	userIDInterface := c.Get("user_id")
-	userID, ok := userIDInterface.(int64)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		return c.JSON(http.StatusUnauthorized, ErrUnauthorized)
 	}
@@ -166,8 +164,7 @@ func (wc *WorkoutController) GetWorkoutByID(c echo.Context) error {
 }
 
 func (wc *WorkoutController) DeleteWorkout(c echo.Context) error {
-	userIDInterface := c.Get("user_id")
-	userID, ok := userIDInterface.(int64)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		return c.JSON(http.StatusUnauthorized, ErrUnauthorized)
 	}

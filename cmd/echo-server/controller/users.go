@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"Dedenruslan19/med-project/cmd/echo-server/middleware"
 	errs "Dedenruslan19/med-project/service/errors"
 	"Dedenruslan19/med-project/service/users"
 	"errors"
@@ -156,8 +157,7 @@ func (uc *UserController) Login(c echo.Context) error {
 }
 
 func (uc *UserController) GetMe(c echo.Context) error {
-	userIDInterface := c.Get("user_id")
-	userID, ok := userIDInterface.(int64)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		return c.JSON(http.StatusUnauthorized, ErrUnauthorized)
 	}

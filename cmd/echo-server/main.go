@@ -20,6 +20,7 @@ import (
 	"Dedenruslan19/med-project/repository/gemini"
 	"Dedenruslan19/med-project/repository/invoice"
 	"Dedenruslan19/med-project/repository/logs"
+	"Dedenruslan19/med-project/repository/notification"
 	"Dedenruslan19/med-project/repository/rapidAPI/bmi"
 	"Dedenruslan19/med-project/repository/user"
 	"Dedenruslan19/med-project/repository/workout"
@@ -120,12 +121,14 @@ func main() {
 	diagnoseSvc := diagnoseService.NewService(logger, diagnoseRepo, appointmentSvc)
 	diagnoseController := controller.NewDiagnoseController(diagnoseSvc, appointmentSvc, billingSvc, logger)
 
+	emailSender, _ := notification.NewSMTPSenderFromEnv()
+
 	invoiceRepo := invoice.NewInvoiceRepo(db, logger)
-	invoiceSvc := invoiceService.NewService(logger, invoiceRepo)
+	invoiceSvc := invoiceService.NewService(logger, invoiceRepo, emailSender)
 	invoiceController := controller.NewInvoiceController(invoiceSvc, billingSvc, appointmentSvc, diagnoseSvc, userSvc, doctorSvc, logger)
 
-	// Create billing controller with invoice service
-	billingController := controller.NewBillingController(billingSvc, invoiceSvc, logger)
+	// Create billing controller with invoice service and appointment service (for ownership checks)
+	billingController := controller.NewBillingController(billingSvc, invoiceSvc, appointmentSvc, logger)
 
 	// Setup Echo
 	e := echo.New()
@@ -150,17 +153,17 @@ func main() {
 	userGroup.POST("/register", userController.Register)
 	userGroup.POST("/login", userController.Login)
 
-	userMiddleware := userGroup.Group("", middleware.JWTMiddleware)
+	userMiddleware := userGroup.Group("", middleware.JWTMiddleware(os.Getenv("JWT_SECRET")))
 	userMiddleware.GET("", userController.GetMe)
 
 	// doctors
 	doctorGroup := e.Group("/doctors")
 	doctorGroup.POST("/register", doctorController.Register, middleware.ValidateContentType)
 	doctorGroup.POST("/login", doctorController.Login, middleware.ValidateContentType)
-	doctorGroup.GET("", doctorController.GetAllDoctors, middleware.JWTMiddleware)
+	doctorGroup.GET("", doctorController.GetAllDoctors, middleware.JWTMiddleware(os.Getenv("JWT_SECRET")))
 
 	// workouts
-	workoutGroup := e.Group("/workouts", middleware.JWTMiddleware)
+	workoutGroup := e.Group("/workouts", middleware.JWTMiddleware(os.Getenv("JWT_SECRET")))
 	workoutGroup.POST("", workoutController.CreateWorkout, middleware.ValidateContentType)
 	workoutGroup.POST("/preview", workoutController.PreviewWorkout, middleware.ValidateContentType)
 	workoutGroup.GET("", workoutController.GetAllWorkouts)
@@ -168,38 +171,38 @@ func main() {
 	workoutGroup.DELETE("/:id", workoutController.DeleteWorkout)
 
 	// exercises
-	exerciseGroup := e.Group("/exercises", middleware.JWTMiddleware)
+	exerciseGroup := e.Group("/exercises", middleware.JWTMiddleware(os.Getenv("JWT_SECRET")))
 	exerciseGroup.POST("", exerciseController.CreateExercise, middleware.ValidateContentType)
 	exerciseGroup.GET("/:id", exerciseController.GetExercisesByWorkoutID)
 	exerciseGroup.PUT("/:id", exerciseController.UpdateExercise, middleware.ValidateContentType)
 	exerciseGroup.DELETE("/:id", exerciseController.DeleteExercise)
 
 	// logs
-	logGroup := e.Group("/logs", middleware.JWTMiddleware)
+	logGroup := e.Group("/logs", middleware.JWTMiddleware(os.Getenv("JWT_SECRET")))
 	logGroup.POST("", logController.CreateLog)
 	logGroup.GET("", logController.GetAllLogs)
 
 	// appointments
-	appointmentGroup := e.Group("/appointments", middleware.JWTMiddleware)
+	appointmentGroup := e.Group("/appointments", middleware.JWTMiddleware(os.Getenv("JWT_SECRET")))
 	appointmentGroup.POST("", appointmentController.CreateAppointment, middleware.ValidateContentType)
 	appointmentGroup.GET("", appointmentController.GetAppointmentsByUser)
 	appointmentGroup.GET("/:id", appointmentController.GetAppointmentByID)
 
-	// diagnoses
-	diagnoseGroup := e.Group("/diagnoses", middleware.JWTMiddleware, middleware.DoctorOnly)
+	// diagnoses (doctors only)
+	diagnoseGroup := e.Group("/diagnoses", middleware.JWTMiddleware(os.Getenv("JWT_SECRET")), middleware.ACLMiddleware(map[string]bool{"doctor": true}))
 	diagnoseGroup.POST("", diagnoseController.CreateDiagnose, middleware.ValidateContentType)
 
-	// billings
-	billingGroup := e.Group("/billings", middleware.JWTMiddleware)
+	// billings (doctors only)
+	billingGroup := e.Group("/billings", middleware.JWTMiddleware(os.Getenv("JWT_SECRET")), middleware.ACLMiddleware(map[string]bool{"doctor": true}))
 	billingGroup.GET("/:id", billingController.GetBillingByID)
 	billingGroup.GET("/appointment/:appointment_id", billingController.GetBillingByAppointmentID)
 	billingGroup.POST("/:id/create-invoice", billingController.CreateInvoice, middleware.ValidateContentType)
 	billingGroup.PUT("/:id/payment-status", billingController.UpdatePaymentStatus, middleware.ValidateContentType)
 
 	// invoices
-	invoiceGroup := e.Group("/invoices", middleware.JWTMiddleware)
-	invoiceGroup.GET("/billing/:billing_id", invoiceController.GetInvoiceByBillingID)
-	invoiceGroup.PUT("/:id/mark-sent", invoiceController.MarkInvoiceAsSent)
+	invoiceGroup := e.Group("/invoices", middleware.JWTMiddleware(os.Getenv("JWT_SECRET")), middleware.ACLMiddleware(map[string]bool{"doctor": true}))
+	invoiceGroup.GET("/billing/:id", invoiceController.GetInvoiceByBillingID)
+	invoiceGroup.POST("/send", invoiceController.SendInvoice, middleware.ValidateContentType)
 
 	// Detect port from Railway
 	port := os.Getenv("PORT")

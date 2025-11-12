@@ -33,14 +33,12 @@ func loadJWTSecret() []byte {
 }
 
 func GenerateJWT(userID int64, roleOrEmail string) (string, error) {
-	// Determine if second parameter is role or email (for backwards compatibility)
 	role := "user"
 	email := roleOrEmail
 
-	// If roleOrEmail is "doctor" or "user", treat it as role
 	if roleOrEmail == "doctor" || roleOrEmail == "user" {
 		role = roleOrEmail
-		email = "" // Email can be empty for now
+		email = ""
 	}
 
 	expirationTime := time.Now().Add(30 * time.Minute)

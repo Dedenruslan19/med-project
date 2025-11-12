@@ -1,6 +1,8 @@
 package controller
 
 import (
+	"Dedenruslan19/med-project/cmd/echo-server/middleware"
+	"Dedenruslan19/med-project/service/appointments"
 	"Dedenruslan19/med-project/service/billings"
 	"Dedenruslan19/med-project/service/invoices"
 	"fmt"
@@ -14,18 +16,20 @@ import (
 )
 
 type BillingController struct {
-	service        billings.Service
-	invoiceService invoices.Service
-	validate       *validator.Validate
-	logger         *slog.Logger
+	service            billings.Service
+	invoiceService     invoices.Service
+	appointmentService appointments.Service
+	validate           *validator.Validate
+	logger             *slog.Logger
 }
 
-func NewBillingController(service billings.Service, invoiceService invoices.Service, logger *slog.Logger) *BillingController {
+func NewBillingController(service billings.Service, invoiceService invoices.Service, appointmentService appointments.Service, logger *slog.Logger) *BillingController {
 	return &BillingController{
-		service:        service,
-		invoiceService: invoiceService,
-		validate:       validator.New(),
-		logger:         logger,
+		service:            service,
+		invoiceService:     invoiceService,
+		appointmentService: appointmentService,
+		validate:           validator.New(),
+		logger:             logger,
 	}
 }
 
@@ -120,6 +124,31 @@ func (bc *BillingController) CreateInvoice(c echo.Context) error {
 		})
 	}
 
+	// Authorization: ensure caller is the appointment's doctor
+	doctorIDFromToken, ok := middleware.GetUserID(c)
+	if !ok {
+		bc.logger.Error("failed to get doctor id from token")
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Unauthorized"})
+	}
+
+	appointment, err := bc.appointmentService.GetByID(billing.AppointmentID)
+	if err != nil {
+		bc.logger.Error("failed to get appointment for ownership check",
+			slog.Any("error", err),
+			slog.Int64("appointment_id", billing.AppointmentID),
+		)
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to validate ownership"})
+	}
+
+	if appointment.DoctorID != doctorIDFromToken {
+		bc.logger.Warn("doctor attempting to create invoice for another doctor's appointment",
+			slog.Int64("token_doctor_id", doctorIDFromToken),
+			slog.Int64("appointment_doctor_id", appointment.DoctorID),
+			slog.Int64("appointment_id", appointment.ID),
+		)
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "You are not authorized to create invoice for this appointment"})
+	}
+
 	// Check if already paid
 	if billing.PaymentStatus == "paid" {
 		return c.JSON(http.StatusBadRequest, map[string]string{
@@ -144,11 +173,25 @@ func (bc *BillingController) CreateInvoice(c echo.Context) error {
 		slog.String("payer_email", req.PayerEmail),
 		slog.Float64("amount", billing.TotalAmount))
 
+	// Create invoice record and return it so Postman shows the invoice details
+	consultationFee := billing.TotalAmount
+	medicationFee := 0.0
+	totalAmount := consultationFee + medicationFee
+
+	invoice, err := bc.invoiceService.CreateInvoice(billingID, consultationFee, medicationFee, totalAmount, req.PayerEmail)
+	if err != nil {
+		bc.logger.Error("Failed to create invoice record",
+			slog.Any("error", err),
+			slog.Int64("billing_id", billingID),
+		)
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "Failed to create invoice",
+		})
+	}
+
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"message": "Payment invoice created successfully",
-		"data": map[string]interface{}{
-			"amount": billing.TotalAmount,
-		},
+		"data":    invoice,
 	})
 }
 

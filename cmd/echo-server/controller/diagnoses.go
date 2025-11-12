@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"Dedenruslan19/med-project/cmd/echo-server/middleware"
 	"Dedenruslan19/med-project/service/appointments"
 	"Dedenruslan19/med-project/service/billings"
 	"Dedenruslan19/med-project/service/diagnoses"
@@ -56,7 +57,7 @@ func (dc *DiagnoseController) CreateDiagnose(c echo.Context) error {
 		})
 	}
 
-	doctorIDFromToken, ok := c.Get("user_id").(int64)
+	doctorIDFromToken, ok := middleware.GetUserID(c)
 	if !ok {
 		dc.logger.Error("Failed to get doctor ID from token")
 		return c.JSON(http.StatusUnauthorized, map[string]string{
