@@ -10,5 +10,5 @@ FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 COPY .env .
-COPY --from=builder /app/app/echo-server/echo-server /echo-server
+COPY --from=builder /app/cmd/echo-server/echo-server /echo-server
 CMD ["/echo-server"]
