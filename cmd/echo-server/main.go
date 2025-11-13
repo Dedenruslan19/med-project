@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"log/slog"
 	"net/http"
@@ -36,9 +35,8 @@ import (
 
 	"github.com/labstack/echo/v4"
 	mdw "github.com/labstack/echo/v4/middleware"
+	"github.com/pobyzaarif/belajarGo2/util/database"
 	cfg "github.com/pobyzaarif/go-config"
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
 )
 
 var (
@@ -47,14 +45,30 @@ var (
 )
 
 type Config struct {
-	AppPort     string `env:"APP_PORT"`
-	DBDriver    string `env:"DB_DRIVER"`
-	DBHost      string `env:"DB_HOST"`
-	DBPort      string `env:"DB_PORT"`
-	DBUser      string `env:"DB_USER"`
-	DBPass      string `env:"DB_PASS"`
-	DBName      string `env:"DB_NAME"`
-	DatabaseURL string `env:"DATABASE_URL"`
+	AppHost                 string `env:"APP_HOST"`
+	AppPort                 string `env:"APP_PORT"`
+	AppDeploymentURL        string `env:"APP_DEPLOYMENT_URL"`
+	AppEmailVerificationKey string `env:"APP_EMAIL_VERIFICATION_KEY"`
+	AppJWTSecret            string `env:"APP_JWT_SECRET"`
+
+	DBDriver string `env:"DB_DRIVER"`
+
+	DBMySQLHost     string `env:"DB_MYSQL_HOST"`
+	DBMySQLPort     string `env:"DB_MYSQL_PORT"`
+	DBMySQLUser     string `env:"DB_MYSQL_USER"`
+	DBMySQLPassword string `env:"DB_MYSQL_PASSWORD"`
+	DBMySQLName     string `env:"DB_MYSQL_NAME"`
+
+	DBSQLiteName string `env:"DB_SQLITE_NAME"`
+
+	DBPostgreSQLHost     string `env:"DB_POSTGRESQL_HOST"`
+	DBPostgreSQLPort     string `env:"DB_POSTGRESQL_PORT"`
+	DBPostgreSQLUser     string `env:"DB_POSTGRESQL_USER"`
+	DBPostgreSQLPassword string `env:"DB_POSTGRESQL_PASSWORD"`
+	DBPostgreSQLName     string `env:"DB_POSTGRESQL_NAME"`
+
+	DBMongoURI  string `env:"DB_MONGO_URI"`
+	DBMongoName string `env:"DB_MONGO_NAME"`
 
 	RapidAPIBMI string `env:"RAPIDAPI_BMI_API_KEY"`
 	GEMINI      string `env:"GEMINI_API_KEY"`
@@ -62,28 +76,31 @@ type Config struct {
 
 func main() {
 	config := Config{}
-	if err := cfg.LoadConfig(&config); err != nil {
+	err := cfg.LoadConfig(&config)
+	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 	logger.Info("Config loaded")
 
-	var dsn string
-	if config.DatabaseURL != "" {
-		dsn = config.DatabaseURL
-		logger.Info("Using DATABASE_URL from Railway environment")
-	} else {
-		dsn = fmt.Sprintf(
-			"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
-			config.DBHost, config.DBPort, config.DBUser, config.DBPass, config.DBName,
-		)
-		logger.Info("Using local database connection")
+	databaseConfig := database.Config{
+		DBDriver:             config.DBDriver,
+		DBMySQLHost:          config.DBMySQLHost,
+		DBMySQLPort:          config.DBMySQLPort,
+		DBMySQLUser:          config.DBMySQLUser,
+		DBMySQLPassword:      config.DBMySQLPassword,
+		DBMySQLName:          config.DBMySQLName,
+		DBSQLiteName:         config.DBSQLiteName,
+		DBPostgreSQLHost:     config.DBPostgreSQLHost,
+		DBPostgreSQLPort:     config.DBPostgreSQLPort,
+		DBPostgreSQLUser:     config.DBPostgreSQLUser,
+		DBPostgreSQLPassword: config.DBPostgreSQLPassword,
+		DBPostgreSQLName:     config.DBPostgreSQLName,
+		DBMongoURI:           config.DBMongoURI,
+		DBMongoName:          config.DBMongoName,
 	}
 
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
-	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
-	}
-	logger.Info("Database client connected!")
+	db := databaseConfig.GetDatabaseConnection()
+	logger.Info("Database client connected! with " + config.DBDriver + " driver")
 
 	// RapidAPI BMI
 	bmiRepo := bmi.NewRapidAPIRepository(logger, config.RapidAPIBMI)
