@@ -4,5 +4,7 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "9006:8000"
+      - "9006:8080"
     restart: always
+    env_file:
+      - .env
