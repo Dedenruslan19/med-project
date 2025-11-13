@@ -33,9 +33,10 @@ import (
 	userService "Dedenruslan19/med-project/service/users"
 	workoutService "Dedenruslan19/med-project/service/workouts"
 
+	"Dedenruslan19/med-project/util/database"
+
 	"github.com/labstack/echo/v4"
 	mdw "github.com/labstack/echo/v4/middleware"
-	"github.com/pobyzaarif/belajarGo2/util/database"
 	cfg "github.com/pobyzaarif/go-config"
 )
 
